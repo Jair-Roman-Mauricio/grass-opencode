@@ -45,6 +45,11 @@ export interface GameState {
   mower: MowerState
   grass: number[][]
   stats: GameStats
+  /**
+   * Mapa de césped persistido (30×30, clave "r,c" → altura 0-5).
+   * Ausente o undefined = "nueva partida, generar fresco".
+   */
+  grassMap?: Record<string, number> | null
 }
 
 export interface InputState {

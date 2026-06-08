@@ -16,6 +16,7 @@ import {
   BAR_CENTER_Y,
 } from '../../game/constants'
 import { getUpgradeValue, getCapacity } from '../../game/economy'
+import { saveGame } from '../../game/save'
 import { audioManager } from '../../audio/AudioManager'
 import { useGameStore } from '../../store/gameStore'
 
@@ -150,7 +151,7 @@ export class WebGLRenderer implements GameRenderer {
     this.effectRenderer.updateDepositingBills()
     this.updateBillStack()
     this.grassRenderer.updateAnimation()
-    this.grassRenderer.updateSway(this.ticks)
+    this.grassRenderer.tick(dt)
     this.updateCamera()
     this.updateMountHint(input)
 
@@ -185,8 +186,20 @@ export class WebGLRenderer implements GameRenderer {
 
   private buildWorld(): void {
     const state = this.state
+
+    // Hidratar desde estado persistido si existe
+    if (state.grassMap && Object.keys(state.grassMap).length > 0) {
+      this.grassMap = {}
+      for (const k of Object.keys(state.grassMap)) {
+        this.grassMap[k] = state.grassMap[k]
+      }
+    }
+
     this.grassRenderer.initGrassMap(this.grassMap)
     this.worldBuilder.build(this.grassMap)
+
+    // Persistir el mapa que initGrassMap acaba de generar (si era fresco)
+    this.persistGrass()
     this.mowerRenderer.build()
     this.playerRenderer.build()
     this.npcRenderer.build(BARN_C + 0.7, BARN_R + 1.6)
@@ -195,6 +208,25 @@ export class WebGLRenderer implements GameRenderer {
     mowerGroup.position.set(state.mower.x, 0, state.mower.y)
 
     this.enemyRenderer.buildAll(this.grassMap)
+  }
+
+  private persistTimer = 0
+
+  private persistGrass(): void {
+    const now = Date.now()
+    if (now - this.persistTimer < 1000) return
+    this.persistTimer = now
+
+    const snap: Record<string, number> = {}
+    for (const k of Object.keys(this.grassMap)) {
+      snap[k] = this.grassMap[k]
+    }
+
+    useGameStore.setState((s) => {
+      const updated = { ...s.state, grassMap: snap }
+      saveGame(updated)
+      return { state: updated }
+    })
   }
 
   private updatePlayer(dt: number, input: InputState): void {
@@ -360,6 +392,7 @@ export class WebGLRenderer implements GameRenderer {
 
         const cut = Math.min(gh, bladePower)
         this.grassMap[key] = gh - cut
+        this.persistGrass()
 
         const newLoad = Math.min(capacity, state.mower.load + cut)
         useGameStore.setState((s) => ({
@@ -496,6 +529,8 @@ export class WebGLRenderer implements GameRenderer {
     }
 
     if (areaTiles.length === 0) return
+
+    this.persistGrass()
 
     // Calcular centro del área para la cámara
     const centerR = (area.rowStart + area.rowEnd) / 2

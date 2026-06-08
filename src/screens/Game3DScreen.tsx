@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { WebGLRenderer } from '../renderers/webgl/GameRenderer'
 import { HUD } from '../components/HUD'
@@ -44,9 +44,15 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const setInput = useGameStore((s) => s.setInput)
   const isPlaying = useGameStore((s) => s.isPlaying)
+  const [showHint, setShowHint] = useState(true)
 
   useEffect(() => {
     useGameStore.getState().setPlaying(true)
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowHint(false), 2000)
+    return () => clearTimeout(timer)
   }, [])
 
   useEffect(() => {
@@ -78,8 +84,15 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
 
     frameId = requestAnimationFrame(loop)
 
+    // Autosave cada 10 segundos
+    const autosaveId = setInterval(() => {
+      useGameStore.getState().save()
+    }, 10000)
+
     return () => {
+      useGameStore.getState().save()
       cancelAnimationFrame(frameId)
+      clearInterval(autosaveId)
       window.removeEventListener('resize', handleResize)
       renderer.destroy()
     }
@@ -99,6 +112,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       }
 
       if (e.key === 'Escape') {
+        useGameStore.getState().save()
         useGameStore.getState().setPlaying(false)
         onBack()
       }
@@ -135,7 +149,6 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       />
 
       <div
-        id="controls-hint"
         style={{
           position: 'absolute', bottom: '50%', left: '50%',
           transform: 'translate(-50%, 50%)',
@@ -144,6 +157,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
           background: 'rgba(0,0,0,.5)', padding: '12px 24px',
           borderRadius: 12, backdropFilter: 'blur(4px)',
           transition: 'opacity 1s',
+          opacity: showHint ? 1 : 0,
         }}
       >
         WASD / Flechas: mover · Acércate al granero para depositar
@@ -181,7 +195,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       )}
 
       <button
-        onClick={onBack}
+        onClick={() => { useGameStore.getState().save(); onBack() }}
         style={menuBtnStyle}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = 'linear-gradient(180deg, #7a8498 0%, #5a6478 50%, #3a4258 100%)'

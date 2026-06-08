@@ -16,6 +16,11 @@ export class AudioManager {
   init(): void {
     if (this._initialized) return
     this._initialized = true
+    // AudioContext se crea perezosamente en initCtx() al primer gesto del usuario
+  }
+
+  private initCtx(): void {
+    if (this.ctx) return
     try {
       this.ctx = new AudioContext()
       this.masterGain = this.ctx.createGain()
@@ -27,7 +32,7 @@ export class AudioManager {
   }
 
   resume(): void {
-    if (!this.ctx) this.init()
+    this.initCtx()
     if (this.ctx?.state === 'suspended') {
       this.ctx.resume()
     }
