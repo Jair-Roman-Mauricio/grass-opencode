@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS saves (
+  id SERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  money INTEGER NOT NULL DEFAULT 0,
+  total_cut INTEGER NOT NULL DEFAULT 0,
+  last_position JSONB,
+  data JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_saves_updated_at ON saves (updated_at DESC);

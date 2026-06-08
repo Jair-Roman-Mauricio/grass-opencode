@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stonegrass-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: game
+      POSTGRES_PASSWORD: game
+      POSTGRES_DB: stonegrass
+    ports:
+      - "5433:5432"
+    volumes:
+      - stonegrass_pg_data:/var/lib/postgresql/data
+      - ./server/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U game -d stonegrass"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - stonegrass-net
+
+  api:
+    image: node:20-alpine
+    container_name: stonegrass-api
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgres://game:game@postgres:5432/stonegrass
+      API_PORT: "3001"
+      NODE_ENV: development
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./server:/app/server
+      - ./package.json:/app/package.json
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./tsconfig.server.json:/app/tsconfig.server.json
+      - api_node_modules:/app/node_modules
+    command:
+      - sh
+      - -c
+      - |
+        corepack enable
+        corepack prepare pnpm@9.15.0 --activate
+        pnpm config set node-linker hoisted
+        pnpm install --frozen-lockfile=false --prod=false
+        pnpm dev:api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - stonegrass-net
+
+  frontend:
+    image: node:20-alpine
+    container_name: stonegrass-frontend
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      NODE_ENV: development
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./:/app
+      - frontend_node_modules:/app/node_modules
+    command:
+      - sh
+      - -c
+      - |
+        corepack enable
+        corepack prepare pnpm@9.15.0 --activate
+        pnpm config set node-linker hoisted
+        pnpm install --frozen-lockfile=false
+        pnpm dev --host 0.0.0.0
+    networks:
+      - stonegrass-net
+
+volumes:
+  stonegrass_pg_data:
+  api_node_modules:
+  frontend_node_modules:
+
+networks:
+  stonegrass-net:
+    driver: bridge
