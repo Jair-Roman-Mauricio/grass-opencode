@@ -1,6 +1,6 @@
-import type { UpgradeDef, AreaDef } from './types'
+import type { UpgradeDef, AreaDef, SeedDef, ToolDef } from './types'
 
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 export const SAVE_KEY = 'stoneGrassSave'
 
 export const TILE_SIZE = 32
@@ -50,36 +50,6 @@ export const UPGRADES: UpgradeDef[] = [
     ],
   },
   {
-    id: 'width',
-    name: 'Ancho',
-    icon: '\uD83D\uDCD0',
-    desc: 'Ancho de corte',
-    levels: [
-      { cost: 0, value: 1 },
-      { cost: 75, value: 1 },
-      { cost: 150, value: 2 },
-      { cost: 250, value: 2 },
-      { cost: 400, value: 3 },
-      { cost: 600, value: 3 },
-      { cost: 900, value: 4 },
-      { cost: 1200, value: 4 },
-    ],
-  },
-  {
-    id: 'blade',
-    name: 'Filo',
-    icon: '\uD83D\uDD2A',
-    desc: 'Potencia de corte',
-    levels: [
-      { cost: 0, value: 1 },
-      { cost: 60, value: 2 },
-      { cost: 120, value: 3 },
-      { cost: 200, value: 4 },
-      { cost: 350, value: 5 },
-      { cost: 500, value: 6 },
-    ],
-  },
-  {
     id: 'income',
     name: 'Ingreso',
     icon: '\uD83D\uDCB0',
@@ -107,4 +77,24 @@ export const AREAS: AreaDef[] = [
   { id: 6, name: 'Noroeste', cost: 1200, rowStart: 0, rowEnd: 15, colStart: 0, colEnd: 15, grassBonus: 2 },
   { id: 7, name: 'Sureste', cost: 2000, rowStart: 25, rowEnd: 40, colStart: 25, colEnd: 40, grassBonus: 2 },
   { id: 8, name: 'Suroeste', cost: 3000, rowStart: 25, rowEnd: 40, colStart: 0, colEnd: 15, grassBonus: 2 },
+]
+
+// --- Semillas (tier 0 = pasto gratis, tier 4 = cannabis) ---
+export const SEEDS: SeedDef[] = [
+  { id: 'pasto',    name: 'Pasto',    icon: '🌱', tier: 0, unlockCost: 0,    seedCost: 0,   valueMult: 1,  growSeconds: 12, maxHeight: 5 },
+  { id: 'trebol',   name: 'Trébol',   icon: '🍀', tier: 1, unlockCost: 150,  seedCost: 10,  valueMult: 2,  growSeconds: 18, maxHeight: 5 },
+  { id: 'trigo',    name: 'Trigo',    icon: '🌾', tier: 2, unlockCost: 500,  seedCost: 30,  valueMult: 4,  growSeconds: 25, maxHeight: 5 },
+  { id: 'girasol',  name: 'Girasol',  icon: '🌻', tier: 3, unlockCost: 1500, seedCost: 80,  valueMult: 8,  growSeconds: 35, maxHeight: 5 },
+  { id: 'cannabis', name: 'Cannabis', icon: '🌿', tier: 4, unlockCost: 5000, seedCost: 250, valueMult: 20, growSeconds: 50, maxHeight: 5 },
+]
+
+/** Cuántas semillas de cada tier puede tener el jugador, según el tier desbloqueado. */
+export const SEED_CAP_PER_TIER = 5
+
+// --- Herramientas (nivel 0 = tijera gratis, nivel 3 = carrito) ---
+export const TOOLS: ToolDef[] = [
+  { id: 'tijera',         name: 'Tijera',           icon: '✂️', cost: 0,    cutWidth: 1, bladePower: 1, rideable: false },
+  { id: 'tijerasGrandes', name: 'Tijeras grandes',  icon: '✂️', cost: 200,  cutWidth: 2, bladePower: 2, rideable: false },
+  { id: 'cortadoraMano',  name: 'Cortadora de mano',icon: '🪚', cost: 800,  cutWidth: 2, bladePower: 3, rideable: false },
+  { id: 'carrito',        name: 'Carrito cortadora',icon: '🚜', cost: 2500, cutWidth: 3, bladePower: 5, rideable: true  },
 ]

@@ -1,11 +1,11 @@
 import { create } from 'zustand'
-import type { GameState, InputState, UpgradeId } from '../game/types'
+import type { GameState, InputState, UpgradeId, SeedId } from '../game/types'
 import { createDefaultState } from '../game/gameState'
 import { loadGame, saveGame, hasSaveData, deleteSave } from '../game/save'
-import { calculateDeposit, getCapacity, getUpgradeCost, isUpgradeMaxed } from '../game/economy'
+import { calculateDeposit, getCapacity, getUpgradeCost, isUpgradeMaxed, getSeedDef, canBuySeed } from '../game/economy'
 import { isAreaAdjacent, isAreaOwned, getAreaDef } from '../game/areas'
 import { processMovement, isNearBarn } from '../game/physics'
-import { AREAS } from '../game/constants'
+import { AREAS, TOOLS } from '../game/constants'
 import { audioManager } from '../audio/AudioManager'
 
 interface GameStore {
@@ -14,6 +14,10 @@ interface GameStore {
   isPlaying: boolean
   showShop: boolean
   showExpand: boolean
+  showSeedShop: boolean
+  showToolShop: boolean
+  nearSeedShop: boolean
+  nearToolShop: boolean
   message: string | null
   messageTimer: number
 
@@ -30,8 +34,17 @@ interface GameStore {
   buyArea: (id: number) => void
   deposit: () => void
 
+  // Cultivo
+  buySeed: (id: SeedId) => void
+  unlockSeed: (id: SeedId) => void
+  selectSeed: (id: SeedId) => void
+  buyTool: (idx: number) => void
+
   toggleShop: () => void
   toggleExpand: () => void
+  toggleSeedShop: () => void
+  toggleToolShop: () => void
+  setNearShops: (near: { seed: boolean; tool: boolean }) => void
   showMessage: (msg: string) => void
   setPlaying: (v: boolean) => void
 
@@ -42,10 +55,14 @@ interface GameStore {
 
 export const useGameStore = create<GameStore>((set, get) => ({
   state: createDefaultState(),
-  input: { up: false, down: false, left: false, right: false, interact: false },
+  input: { up: false, down: false, left: false, right: false, interact: false, interact2: false },
   isPlaying: false,
   showShop: false,
   showExpand: false,
+  showSeedShop: false,
+  showToolShop: false,
+  nearSeedShop: false,
+  nearToolShop: false,
   message: null,
   messageTimer: 0,
 
@@ -185,8 +202,80 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ state: newState })
   },
 
-  toggleShop: () => set((s) => ({ showShop: !s.showShop, showExpand: false })),
-  toggleExpand: () => set((s) => ({ showExpand: !s.showExpand, showShop: false })),
+  buySeed: (id) => {
+    const { state } = get()
+    if (!canBuySeed(state, id)) {
+      get().showMessage('No puedes comprar esa semilla')
+      return
+    }
+    const def = getSeedDef(id)
+    const newState: GameState = {
+      ...state,
+      money: state.money - def.seedCost,
+      seeds: { ...state.seeds, [id]: state.seeds[id] + 1 },
+    }
+    audioManager.playClick()
+    set({ state: newState })
+  },
+
+  unlockSeed: (id) => {
+    const { state } = get()
+    const def = getSeedDef(id)
+    // Desbloqueo secuencial: solo el tier inmediatamente superior.
+    if (def.tier !== state.seedTierUnlocked + 1) return
+    if (state.money < def.unlockCost) {
+      get().showMessage('No tienes suficiente dinero')
+      return
+    }
+    const newState: GameState = {
+      ...state,
+      money: state.money - def.unlockCost,
+      seedTierUnlocked: def.tier,
+    }
+    audioManager.playClick()
+    set({ state: newState })
+  },
+
+  selectSeed: (id) => {
+    const { state } = get()
+    if (getSeedDef(id).tier > state.seedTierUnlocked) return
+    set({ state: { ...state, selectedSeed: id } })
+  },
+
+  buyTool: (idx) => {
+    const { state } = get()
+    const def = TOOLS[idx]
+    if (!def) return
+    if (idx <= state.tool) return // ya la tienes (o es anterior)
+    if (idx !== state.tool + 1) {
+      get().showMessage('Compra la herramienta anterior primero')
+      return
+    }
+    if (state.money < def.cost) {
+      get().showMessage('No tienes suficiente dinero')
+      return
+    }
+    const newState: GameState = {
+      ...state,
+      money: state.money - def.cost,
+      tool: idx,
+    }
+    audioManager.playClick()
+    set({ state: newState })
+  },
+
+  toggleShop: () => set((s) => ({ showShop: !s.showShop, showExpand: false, showSeedShop: false, showToolShop: false })),
+  toggleExpand: () => set((s) => ({ showExpand: !s.showExpand, showShop: false, showSeedShop: false, showToolShop: false })),
+  toggleSeedShop: () => set((s) => ({ showSeedShop: !s.showSeedShop, showToolShop: false, showShop: false, showExpand: false })),
+  toggleToolShop: () => set((s) => ({ showToolShop: !s.showToolShop, showSeedShop: false, showShop: false, showExpand: false })),
+  setNearShops: ({ seed, tool }) => set((s) => {
+    if (s.nearSeedShop === seed && s.nearToolShop === tool) return {}
+    // Si te alejas del vendedor, cierra su modal.
+    const patch: Partial<GameStore> = { nearSeedShop: seed, nearToolShop: tool }
+    if (!seed && s.showSeedShop) patch.showSeedShop = false
+    if (!tool && s.showToolShop) patch.showToolShop = false
+    return patch
+  }),
 
   showMessage: (msg) => {
     set({ message: msg, messageTimer: 2000 })

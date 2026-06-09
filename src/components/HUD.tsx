@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
-import { getCapacity } from '../game/economy'
+import { getCapacity, getSeedDef, getCurrentTool } from '../game/economy'
 import { formatNum } from '../utils/utils'
 import { isNearBarn } from '../game/physics'
 
@@ -17,15 +18,17 @@ export function HUD() {
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' }}>
       <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-        padding: '12px 16px', gap: 8,
+        display: 'flex', alignItems: 'flex-start',
+        padding: '12px 16px', gap: 12,
       }}>
-        <div style={boxStyle}>
-          <span style={{ fontSize: 12, color: '#aaa' }}>DINERO</span>
-          <span style={{ fontSize: 22, fontWeight: 'bold', color: '#4CAF50' }}>
-            ${formatNum(state.money)}
-          </span>
-        </div>
+        {/* Empuja el contenido a la derecha del botón MENU (110px + 8px + 8px) */}
+        <div style={{ width: 126, flexShrink: 0 }} />
+
+        <MoneyCounter value={state.money} />
+
+        <SeedWidget />
+
+        <div style={{ flex: 1 }} />
 
         <LoadBar value={state.mower.load} max={capacity} />
 
@@ -67,6 +70,102 @@ export function HUD() {
         </div>
       )}
     </div>
+  )
+}
+
+function SeedWidget() {
+  const state = useGameStore((s) => s.state)
+  const seed = getSeedDef(state.selectedSeed)
+  const count = state.seeds[state.selectedSeed] ?? 0
+  const tool = getCurrentTool(state)
+  return (
+    <div style={seedWidgetStyle} title="Semilla seleccionada · Herramienta actual">
+      <span style={{ fontSize: 22 }}>{seed.icon}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+        <span style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{seed.name} x{count}</span>
+        <span style={{ color: '#9aa3b5', fontSize: 10 }}>{tool.icon} {tool.name}</span>
+      </div>
+    </div>
+  )
+}
+
+const seedWidgetStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 8,
+  height: 52, padding: '0 14px',
+  border: '2px solid #7a8498', borderRadius: 8,
+  background: 'linear-gradient(180deg, #6a7488 0%, #4a5468 50%, #2a3142 100%)',
+  boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.25), inset 0 -2px 0 rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.4)',
+  pointerEvents: 'auto', flexShrink: 0,
+}
+
+function MoneyCounter({ value }: { value: number }) {
+  const [pulse, setPulse] = useState(0)
+  const prev = useRef(value)
+
+  useEffect(() => {
+    if (value > prev.current) {
+      setPulse((p) => p + 1)
+      const t = setTimeout(() => setPulse(0), 400)
+      prev.current = value
+      return () => clearTimeout(t)
+    }
+    prev.current = value
+  }, [value])
+
+  return (
+    <div style={coinBoxStyle}>
+      <CoinIcon />
+      <span
+        key={pulse}
+        style={{
+          fontFamily: "'Cinzel', 'Times New Roman', serif",
+          fontSize: 20,
+          fontWeight: 700,
+          letterSpacing: 2,
+          color: '#FFD700',
+          textShadow: '0 1px 2px rgba(0,0,0,0.7), 0 0 6px rgba(255,215,0,0.5)',
+          animation: pulse > 0 ? 'coinPop 0.4s ease-out' : 'none',
+          display: 'inline-block',
+          textTransform: 'uppercase',
+        }}
+      >
+        ${formatNum(value)}
+      </span>
+      <style>{`
+        @keyframes coinPop {
+          0%   { transform: scale(1);    color: #FFD700; }
+          40%  { transform: scale(1.22); color: #FFF8A0; text-shadow: 0 0 14px rgba(255,215,0,0.9); }
+          100% { transform: scale(1);    color: #FFD700; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+function CoinIcon() {
+  return (
+    <svg width={26} height={26} viewBox='0 0 32 32' fill='none' style={{ flexShrink: 0 }}>
+      <defs>
+        <radialGradient id='coinFace' cx='0.35' cy='0.3' r='0.8'>
+          <stop offset='0%' stopColor='#FFF59D' />
+          <stop offset='55%' stopColor='#FFD700' />
+          <stop offset='100%' stopColor='#B8860B' />
+        </radialGradient>
+        <linearGradient id='coinEdge' x1='0' y1='0' x2='0' y2='1'>
+          <stop offset='0%' stopColor='#DAA520' />
+          <stop offset='100%' stopColor='#8B6914' />
+        </linearGradient>
+      </defs>
+      <circle cx='16' cy='17' r='12' fill='url(#coinEdge)' />
+      <circle cx='16' cy='16' r='12' fill='url(#coinFace)' stroke='#8B6914' strokeWidth='1.5' />
+      <text
+        x='16' y='16'
+        textAnchor='middle' dominantBaseline='central'
+        fontSize='14' fontWeight='bold' fontFamily='Cinzel, serif'
+        fill='#8B6914' stroke='#5C4708' strokeWidth='0.5'
+      >$</text>
+      <ellipse cx='12' cy='12' rx='3' ry='1.5' fill='rgba(255,255,255,0.6)' />
+    </svg>
   )
 }
 
@@ -169,13 +268,22 @@ function ControlBtn({ dir, onDown, onUp }: { dir: string; onDown: () => void; on
   )
 }
 
-const boxStyle: React.CSSProperties = {
-  background: 'rgba(0,0,0,0.6)',
-  borderRadius: 8,
-  padding: '8px 12px',
+const coinBoxStyle: React.CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
-  minWidth: 100,
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  height: 52,
+  minWidth: 140,
+  padding: '0 16px',
+  border: '2px solid #7a8498',
+  borderRadius: 8,
+  background: 'linear-gradient(180deg, #6a7488 0%, #4a5468 50%, #2a3142 100%)',
+  boxShadow:
+    'inset 0 2px 0 rgba(255,255,255,0.25), inset 0 -2px 0 rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.4)',
+  fontFamily: "'Cinzel', 'Times New Roman', serif",
+  pointerEvents: 'auto',
+  flexShrink: 0,
 }
 
 const btnStyle: React.CSSProperties = {

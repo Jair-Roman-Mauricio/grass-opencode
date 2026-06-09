@@ -17,13 +17,22 @@ export interface EnemyData {
   stuckTimer: number
 }
 
+export interface BarnAABB {
+  minX: number
+  maxX: number
+  minZ: number
+  maxZ: number
+}
+
 export class EnemyRenderer {
   enemies: EnemyData[] = []
   private scene: THREE.Scene
+  private getBarnAABB: () => BarnAABB | null
   private self = this
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, getBarnAABB: () => BarnAABB | null) {
     this.scene = scene
+    this.getBarnAABB = getBarnAABB
   }
 
   buildAll(grassMap?: Record<string, number>): void {
@@ -160,7 +169,16 @@ export class EnemyRenderer {
       const d = Math.sqrt((o.x - x) ** 2 + (o.z - z) ** 2)
       if (d < 0.9) return true
     }
-    if (x >= 12 && x <= 18 && z >= 12 && z <= 18) return true
+    // Chocar contra la tienda (AABB real, no un cuadrado genérico).
+    const barn = this.getBarnAABB?.()
+    if (barn) {
+      const radius = 0.4
+      const closestX = Math.max(barn.minX, Math.min(x, barn.maxX))
+      const closestZ = Math.max(barn.minZ, Math.min(z, barn.maxZ))
+      const dx = x - closestX
+      const dz = z - closestZ
+      if (dx * dx + dz * dz < radius * radius) return true
+    }
     return false
   }
 

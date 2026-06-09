@@ -1,5 +1,5 @@
-import type { GameState, UpgradeId } from './types'
-import { UPGRADES, AREAS } from './constants'
+import type { GameState, UpgradeId, SeedId, SeedDef, ToolDef, PlotData } from './types'
+import { UPGRADES, AREAS, SEEDS, TOOLS, SEED_CAP_PER_TIER } from './constants'
 
 export function getUpgradeLevel(state: GameState, id: UpgradeId): number {
   return state.upgrades[id]
@@ -48,11 +48,60 @@ export function getSpeed(state: GameState): number {
 }
 
 export function getCutWidth(state: GameState): number {
-  return getUpgradeValue(state, 'width')
+  return getCurrentTool(state).cutWidth
 }
 
 export function getBladePower(state: GameState): number {
-  return getUpgradeValue(state, 'blade')
+  return getCurrentTool(state).bladePower
+}
+
+// --- Herramientas ---
+
+export function getCurrentTool(state: GameState): ToolDef {
+  return TOOLS[Math.min(state.tool, TOOLS.length - 1)]
+}
+
+export function getToolDef(idx: number): ToolDef | undefined {
+  return TOOLS[idx]
+}
+
+export function isRiding(state: GameState): boolean {
+  return getCurrentTool(state).rideable
+}
+
+// --- Semillas ---
+
+export function getSeedDef(id: SeedId): SeedDef {
+  return SEEDS.find(s => s.id === id) ?? SEEDS[0]
+}
+
+/** ¿Está desbloqueada esta categoría de semilla? */
+export function isSeedUnlocked(state: GameState, id: SeedId): boolean {
+  return getSeedDef(id).tier <= state.seedTierUnlocked
+}
+
+/** Tope de semillas que puede tener el jugador de un tier dado. */
+export function seedBuyCap(state: GameState, tier: number): number {
+  if (tier > state.seedTierUnlocked) return 0
+  return SEED_CAP_PER_TIER * (state.seedTierUnlocked - tier + 1)
+}
+
+/** ¿Puede comprar una semilla más de este tipo (desbloqueada y por debajo del tope)? */
+export function canBuySeed(state: GameState, id: SeedId): boolean {
+  const def = getSeedDef(id)
+  if (!isSeedUnlocked(state, id)) return false
+  if (state.seeds[id] >= seedBuyCap(state, def.tier)) return false
+  return state.money >= def.seedCost
+}
+
+/** Hay semilla seleccionada disponible para plantar. */
+export function canPlant(state: GameState): boolean {
+  return (state.seeds[state.selectedSeed] ?? 0) > 0
+}
+
+/** Valor monetario de una unidad de altura cortada de una parcela. */
+export function plotCutValue(plot: PlotData, units: number): number {
+  return units * getSeedDef(plot.type).valueMult
 }
 
 export function getIncomeMultiplier(state: GameState): number {

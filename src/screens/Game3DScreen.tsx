@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { WebGLRenderer } from '../renderers/webgl/GameRenderer'
+import { assetLoader } from '../renderers/webgl/AssetLoader'
 import { HUD } from '../components/HUD'
 import { ShopOverlay } from '../components/ShopOverlay'
 import { ExpandOverlay } from '../components/ExpandOverlay'
+import { SeedShopOverlay } from '../components/SeedShopOverlay'
+import { ToolShopOverlay } from '../components/ToolShopOverlay'
 
 interface Game3DScreenProps {
   onBack: () => void
@@ -45,9 +48,21 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
   const setInput = useGameStore((s) => s.setInput)
   const isPlaying = useGameStore((s) => s.isPlaying)
   const [showHint, setShowHint] = useState(true)
+  const [assetsReady, setAssetsReady] = useState(false)
 
   useEffect(() => {
     useGameStore.getState().setPlaying(true)
+  }, [])
+
+  // Precargar modelos 3D (GLTF) antes de construir el mundo
+  useEffect(() => {
+    let cancelled = false
+    assetLoader.preloadModels().then(() => {
+      if (!cancelled) setAssetsReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -56,6 +71,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
   }, [])
 
   useEffect(() => {
+    if (!assetsReady) return
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -96,7 +112,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       window.removeEventListener('resize', handleResize)
       renderer.destroy()
     }
-  }, [])
+  }, [assetsReady])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -108,6 +124,11 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
 
       if (e.key === 'e' || e.key === 'E') {
         setInput({ interact: true })
+        e.preventDefault()
+      }
+
+      if (e.key === 'f' || e.key === 'F') {
+        setInput({ interact2: true })
         e.preventDefault()
       }
 
@@ -124,6 +145,10 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
 
       if (e.key === 'e' || e.key === 'E') {
         setInput({ interact: false })
+      }
+
+      if (e.key === 'f' || e.key === 'F') {
+        setInput({ interact2: false })
       }
     }
 
@@ -148,6 +173,27 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
         style={{ display: 'block', width: '100%', height: '100%' }}
       />
 
+
+      {!assetsReady && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 30,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexDirection: 'column', gap: 16,
+            background: '#0d2818', color: '#cfe8d4',
+            fontFamily: "'Cinzel', 'Times New Roman', serif", letterSpacing: 2,
+          }}
+        >
+          <div style={{
+            width: 44, height: 44, borderRadius: '50%',
+            border: '4px solid rgba(255,255,255,.2)', borderTopColor: '#8fd19e',
+            animation: 'spin 1s linear infinite',
+          }} />
+          <div style={{ fontSize: 18 }}>Cargando…</div>
+          <style>{'@keyframes spin{to{transform:rotate(360deg)}}'}</style>
+        </div>
+      )}
+
       <div
         style={{
           position: 'absolute', bottom: '50%', left: '50%',
@@ -160,7 +206,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
           opacity: showHint ? 1 : 0,
         }}
       >
-        WASD / Flechas: mover · Acércate al granero para depositar
+        WASD: mover · E: plantar/cosechar · F: tienda del vendedor · Granero: depositar
       </div>
 
       <div
@@ -191,6 +237,8 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
           <HUD />
           <ShopOverlay />
           <ExpandOverlay />
+          <SeedShopOverlay />
+          <ToolShopOverlay />
         </>
       )}
 

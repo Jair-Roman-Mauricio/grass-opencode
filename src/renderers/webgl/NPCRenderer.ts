@@ -15,6 +15,9 @@ export class NPCRenderer {
 
   build(x: number, z: number): THREE.Group {
     const g = new THREE.Group()
+    // Estilo VOXEL: todo cubos (BoxGeometry), sin esferas.
+    // Mismas proporciones generales que la versión anterior (~0.9m de alto)
+    // para que el NPC se vea bien detrás del mostrador de la tienda escalada.
     const skin = new THREE.MeshStandardMaterial({ color: 0xffcc99, roughness: 0.8 })
     const shirt = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 })
     const apron = new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.6 })
@@ -22,53 +25,61 @@ export class NPCRenderer {
     const shoes = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 })
     const hairM = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.9 })
     const eyeM = new THREE.MeshStandardMaterial({ color: 0x222222 })
+    const mouthM = new THREE.MeshStandardMaterial({ color: 0x222222 })
 
     const b2 = (w: number, h: number, d: number, m: THREE.Material) => {
       const r = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
       r.castShadow = true
       return r
     }
-    const sp = (r: number, seg: number, m: THREE.Material) => {
-      const m2 = new THREE.Mesh(new THREE.SphereGeometry(r, seg, seg), m)
-      m2.castShadow = true
-      return m2
-    }
 
+    // Torso (camisa blanca)
     const body = b2(0.28, 0.24, 0.16, shirt)
     body.position.y = 0.42
     g.add(body)
 
+    // Delantal rojo
     const apronMesh = b2(0.3, 0.22, 0.02, apron)
     apronMesh.position.set(0, 0.4, 0.09)
     g.add(apronMesh)
 
+    // Bolsillo del delantal
     const pocket = b2(0.14, 0.1, 0.025, apron)
     pocket.position.set(0, 0.32, 0.1)
     g.add(pocket)
 
-    const head = sp(0.11, 10, skin)
-    head.position.y = 0.65
+    // Cabeza voxel (cubo)
+    const head = b2(0.22, 0.22, 0.22, skin)
+    head.position.y = 0.66
     g.add(head)
     this.head = head
 
-    const hair = sp(0.115, 10, hairM)
-    hair.position.set(0, 0.7, 0)
-    hair.scale.set(1, 0.7, 1)
+    // Pelo / gorrito (cubo aplanado encima)
+    const hair = b2(0.24, 0.06, 0.24, hairM)
+    hair.position.set(0, 0.79, -0.005)
     g.add(hair)
+    // Pequeño flequillo al frente
+    const bangs = b2(0.24, 0.05, 0.04, hairM)
+    bangs.position.set(0, 0.74, 0.11)
+    g.add(bangs)
 
-    for (const ex of [-0.045, 0.045]) {
-      const e = sp(0.02, 6, eyeM)
-      e.position.set(ex, 0.66, 0.1)
+    // Ojos (cubos pequeños)
+    for (const ex of [-0.05, 0.05]) {
+      const e = b2(0.03, 0.03, 0.012, eyeM)
+      e.position.set(ex, 0.68, 0.115)
       g.add(e)
     }
 
-    const smile = b2(0.06, 0.012, 0.01, new THREE.MeshStandardMaterial({ color: 0x222222 }))
-    smile.position.set(0, 0.61, 0.105)
+    // Sonrisa (cubo aplanado)
+    const smile = b2(0.06, 0.012, 0.01, mouthM)
+    smile.position.set(0, 0.62, 0.115)
     g.add(smile)
 
+    // Brazos: pivote en el hombro, cuelgan hacia abajo
+    const SHOULDER_Y = 0.5
     const makeArm = (side: number) => {
       const pivot = new THREE.Group()
-      pivot.position.set(side * 0.19, 0.5, 0)
+      pivot.position.set(side * 0.19, SHOULDER_Y, 0)
       const ua = b2(0.05, 0.18, 0.05, shirt)
       ua.position.y = -0.09
       pivot.add(ua)
@@ -82,9 +93,11 @@ export class NPCRenderer {
     makeArm(-1)
     makeArm(1)
 
+    // Piernas: pivote en la cadera
+    const HIP_Y = 0.18
     const makeLeg = (side: number) => {
       const pivot = new THREE.Group()
-      pivot.position.set(side * 0.08, 0.18, 0)
+      pivot.position.set(side * 0.08, HIP_Y, 0)
       const ul = b2(0.07, 0.18, 0.07, pants)
       ul.position.y = -0.09
       pivot.add(ul)

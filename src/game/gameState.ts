@@ -6,7 +6,8 @@ export function createDefaultMower(): MowerState {
     x: Math.floor(GRID_SIZE / 2),
     y: Math.floor(GRID_SIZE / 2),
     load: 0,
-    mounted: true,
+    value: 0,
+    mounted: false,
   }
 }
 
@@ -24,7 +25,7 @@ export function createDefaultGrass(): number[][] {
 export function createDefaultState(): GameState {
   return {
     money: 0,
-    upgrades: { speed: 0, capacity: 0, width: 0, blade: 0, income: 0 },
+    upgrades: { speed: 0, capacity: 0, income: 0 },
     areas: [true, false, false, false, false, false, false, false, false],
     mower: createDefaultMower(),
     grass: createDefaultGrass(),
@@ -34,6 +35,12 @@ export function createDefaultState(): GameState {
       totalDeposits: 0,
       playTime: 0,
     },
+    // Sistema de cultivo: parcela vacía, solo pasto disponible (gratis), tijera.
+    seeds: { pasto: 0, trebol: 0, trigo: 0, girasol: 0, cannabis: 0 },
+    seedTierUnlocked: 0,
+    selectedSeed: 'pasto',
+    tool: 0,
+    plots: {},
   }
 }
 
