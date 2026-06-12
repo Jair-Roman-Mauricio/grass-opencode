@@ -54,13 +54,23 @@ button {
   animation: modalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.mobile-controls {
+.mobile-joystick-wrap {
   display: none !important;
-  align-items: center;
+}
+
+.mobile-actions {
+  display: none !important;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
 }
 
 @media (max-width: 768px) {
-  .mobile-controls {
+  .mobile-joystick-wrap {
+    display: block !important;
+  }
+
+  .mobile-actions {
     display: flex !important;
   }
 }

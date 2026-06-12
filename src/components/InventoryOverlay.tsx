@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { useGameStore } from '../store/gameStore'
 import { getSeedDef, getCurrentTool } from '../game/economy'
 import { formatNum } from '../utils/utils'
@@ -52,6 +53,10 @@ export function InventoryOverlay() {
 
   const tool = getCurrentTool(state)
   const seedIds: SeedId[] = ['pasto', 'trebol', 'trigo', 'girasol', 'cannabis']
+  const isMobile = useIsMobile()
+  const hotbarSlotCount = isMobile ? 6 : 12
+  const slotSize = isMobile ? 40 : 48
+  const iconSize = isMobile ? 26 : 32
 
   // Detect scroll wheel to change active hotbar slot
   useEffect(() => {
@@ -96,27 +101,30 @@ export function InventoryOverlay() {
       {/* ── ON-SCREEN HOTBAR (Bottom Center) ── */}
       <div style={{
         position: 'absolute',
-        bottom: 12,
+        bottom: isMobile ? 'calc(8px + env(safe-area-inset-bottom, 0px))' : 12,
         left: '50%',
-        transform: 'translateX(-50%)',
+        transform: isMobile ? 'translateX(-50%) scale(0.9)' : 'translateX(-50%)',
+        transformOrigin: 'bottom center',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: 4,
         pointerEvents: 'auto',
         zIndex: 10,
+        maxWidth: isMobile ? '96vw' : undefined,
       }}>
         {/* Hotbar Frame */}
         <div style={{
           display: 'flex',
+          flexWrap: isMobile ? 'nowrap' : undefined,
           background: `linear-gradient(180deg, ${WOOD_LIGHT} 0%, ${WOOD_MID} 45%, ${WOOD_DARK} 100%)`,
           border: `4px solid ${WOOD_DARK}`,
           borderRadius: 8,
-          padding: '4px 6px',
-          gap: 6,
+          padding: isMobile ? '3px 4px' : '4px 6px',
+          gap: isMobile ? 4 : 6,
           boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.6)',
         }}>
-          {Array.from({ length: 12 }).map((_, idx) => {
+          {Array.from({ length: hotbarSlotCount }).map((_, idx) => {
             const isSelected = activeSlot === idx
             const isToolSlot = idx === 0
             const isSeedSlot = idx >= 1 && idx <= 5
@@ -133,8 +141,8 @@ export function InventoryOverlay() {
                 key={idx}
                 onClick={() => isUnlocked && setActiveSlot(idx)}
                 style={{
-                  width: 48,
-                  height: 48,
+                  width: slotSize,
+                  height: slotSize,
                   background: isSelected ? '#fff6d1' : LIGHT_CREAM,
                   border: isSelected ? `4px solid ${SELECTED_BORDER}` : `2px solid ${SLOT_BORDER}`,
                   borderRadius: 4,
@@ -167,11 +175,11 @@ export function InventoryOverlay() {
 
                 {/* Slot Content */}
                 {isToolSlot && (
-                  <ItemPixelIcon id={tool.id} emoji={tool.icon} size={32} />
+                  <ItemPixelIcon id={tool.id} emoji={tool.icon} size={iconSize} />
                 )}
 
                 {isSeedSlot && isUnlocked && seedId && seedDef && (
-                  <ItemPixelIcon id={seedId} emoji={seedDef.icon} size={32} />
+                  <ItemPixelIcon id={seedId} emoji={seedDef.icon} size={iconSize} />
                 )}
 
                 {/* Seed count */}
@@ -231,15 +239,19 @@ export function InventoryOverlay() {
           inset: 0,
           background: 'rgba(0,0,0,0.6)',
           display: 'flex',
-          alignItems: 'center',
+          alignItems: isMobile ? 'flex-start' : 'center',
           justifyContent: 'center',
           zIndex: 100,
           pointerEvents: 'auto',
           backdropFilter: 'blur(4px)',
+          overflowY: 'auto',
+          padding: isMobile ? '12px 8px' : 0,
         }}>
           {/* Modal Container */}
           <div className="modal-content" style={{
-            width: 720,
+            width: isMobile ? '94vw' : 720,
+            maxWidth: '100%',
+            margin: isMobile ? 'auto' : undefined,
             background: `linear-gradient(135deg, ${WOOD_LIGHT} 0%, ${WOOD_MID} 50%, ${WOOD_DARK} 100%)`,
             border: `5px solid ${WOOD_DARK}`,
             borderRadius: 12,
@@ -316,8 +328,8 @@ export function InventoryOverlay() {
               {/* ── GRID OF 36 SLOTS (3 rows of 12) ── */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(12, 1fr)',
-                gap: 6,
+                gridTemplateColumns: isMobile ? 'repeat(6, 1fr)' : 'repeat(12, 1fr)',
+                gap: isMobile ? 4 : 6,
                 padding: 10,
                 background: '#d4af75',
                 border: `3px solid ${WOOD_DARK}`,
@@ -400,11 +412,12 @@ export function InventoryOverlay() {
               {/* ── LOWER PANEL (Left Character / Right Info + trash) ── */}
               <div style={{
                 display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
                 gap: 16,
               }}>
                 {/* Personaje 3D + equipamiento */}
                 <div style={{
-                  width: 280,
+                  width: isMobile ? '100%' : 280,
                   background: '#d4af75',
                   border: `3px solid ${WOOD_DARK}`,
                   borderRadius: 8,

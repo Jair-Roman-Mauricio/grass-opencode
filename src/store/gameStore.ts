@@ -33,6 +33,8 @@ interface GameStore {
   activeSlot: number
   message: string | null
   messageTimer: number
+  mobileActionE: string
+  mobileActionF: string
 
   // --- Día / Cobrador / Mapas (runtime, no persistido) ---
   dayClock: number          // ms restantes del día actual
@@ -106,6 +108,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   activeSlot: 0,
   message: null,
   messageTimer: 0,
+  mobileActionE: 'Usar',
+  mobileActionF: 'Interactuar',
 
   dayClock: DAY_LENGTH_MS,
   dayLength: DAY_LENGTH_MS,

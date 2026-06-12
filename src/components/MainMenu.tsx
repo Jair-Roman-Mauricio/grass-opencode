@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { audioManager } from '../audio/AudioManager'
 import { SettingsModal } from './SettingsModal'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 interface MainMenuProps {
   onStart: (withIntro: boolean) => void
@@ -85,16 +86,26 @@ export function MainMenu({ onStart }: MainMenuProps) {
 
   const hasSave = saves.length > 0
   const hasProgress = state.money > 0 || state.stats.totalCut > 0
+  const isMobile = useIsMobile()
 
   return (
     <div style={containerStyle}>
-      <div style={sidebarStyle}>
+      <div style={{
+        ...sidebarStyle,
+        ...(isMobile ? { width: '100%', borderRight: 'none', boxShadow: 'none' } : {}),
+      }}>
         <div style={sidebarTextureStyle} />
 
-        <div style={sidebarContentStyle}>
-          <Title />
+        <div style={{
+          ...sidebarContentStyle,
+          ...(isMobile ? { padding: '40px 24px 24px' } : {}),
+        }}>
+          <Title isMobile={isMobile} />
 
-          <div style={subtitleStyle}>
+          <div style={{
+            ...subtitleStyle,
+            ...(isMobile ? { fontSize: 10, marginBottom: 32, padding: '0 8px' } : {}),
+          }}>
             Corta pasto · Gana dinero · Expande tu terreno
           </div>
 
@@ -140,7 +151,7 @@ export function MainMenu({ onStart }: MainMenuProps) {
         </div>
       </div>
 
-      <div style={rightPanelStyle}>
+      {!isMobile && <div style={rightPanelStyle}>
         {bgFailed ? (
           <div style={bgFallbackStyle}>
             <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>
@@ -156,7 +167,7 @@ export function MainMenu({ onStart }: MainMenuProps) {
           />
         )}
         <div style={bgVignetteStyle} />
-      </div>
+      </div>}
 
       {settingsOpen && (
         <SettingsModal onClose={() => setSettingsOpen(false)} />
@@ -165,12 +176,13 @@ export function MainMenu({ onStart }: MainMenuProps) {
   )
 }
 
-function Title() {
+function Title({ isMobile }: { isMobile: boolean }) {
+  const mobileTitle = isMobile ? { fontSize: 32, letterSpacing: 4 } : {}
   return (
     <div style={titleWrapStyle}>
-      <div style={titleOrnamentStyle}>— ✦ —</div>
-      <h1 style={titleStyle}>STONE GRASS</h1>
-      <div style={titleShadowStyle} aria-hidden>STONE GRASS</div>
+      <div style={{ ...titleOrnamentStyle, ...(isMobile ? { fontSize: 12, letterSpacing: 6 } : {}) }}>— ✦ —</div>
+      <h1 style={{ ...titleStyle, ...mobileTitle }}>STONE GRASS</h1>
+      <div style={{ ...titleShadowStyle, ...mobileTitle }} aria-hidden>STONE GRASS</div>
     </div>
   )
 }

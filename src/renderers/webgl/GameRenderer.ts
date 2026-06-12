@@ -179,6 +179,7 @@ export class WebGLRenderer implements GameRenderer {
     this.updateCamera()
     this.growthBarRenderer.updateFacing(this.camera)
     this.updateMountHint(input)
+    this.updateMobileActionLabels()
 
     // El carrito solo es visible cuando se ha comprado (herramienta rideable).
     const curTool = getCurrentTool(state)
@@ -844,6 +845,38 @@ export class WebGLRenderer implements GameRenderer {
       this.camera.position.z += (tz + 7 - this.camera.position.z) * 0.04
       this.camera.position.y += (7 - this.camera.position.y) * 0.04
       this.camera.lookAt(tx, 0, tz)
+    }
+  }
+
+  private updateMobileActionLabels(): void {
+    const p = this.playerRenderer.person
+    const store = useGameStore.getState()
+    const state = store.state
+
+    let labelE = 'Usar'
+    let labelF = 'Interactuar'
+
+    if (p.state === 'ride') {
+      labelE = 'Bajar'
+    } else if (p.state === 'walk') {
+      if (store.nearSeedShop) labelF = 'Semillas'
+      else if (store.nearToolShop) labelF = 'Herramientas'
+      else if (store.nearBusStop) labelF = 'Autobús'
+      else if (store.nearCorral) labelF = 'Mejorar'
+
+      const md = Math.sqrt((p.x - state.mower.x) ** 2 + (p.z - state.mower.y) ** 2)
+      if (getCurrentTool(state).rideable && md < 2.5) {
+        labelE = 'Subir'
+      } else {
+        const key = Math.floor(p.z) + ',' + Math.floor(p.x)
+        if (!this.plots[key] && (state.seeds[state.selectedSeed] ?? 0) > 0) {
+          labelE = 'Plantar'
+        }
+      }
+    }
+
+    if (store.mobileActionE !== labelE || store.mobileActionF !== labelF) {
+      useGameStore.setState({ mobileActionE: labelE, mobileActionF: labelF })
     }
   }
 

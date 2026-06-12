@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { useGameStore } from '../store/gameStore'
 import { MAPS } from '../game/constants'
 import { isMapOwned, travelCost } from '../game/maps'
@@ -55,6 +56,8 @@ export function BusStopModal() {
     return () => window.removeEventListener('keydown', handleEsc)
   }, [show, toggle])
 
+  const isMobile = useIsMobile()
+
   if (!show) return null
 
   return (
@@ -83,23 +86,38 @@ export function BusStopModal() {
               return (
                 <div
                   key={map.id}
+                  className={isMobile ? 'bus-stop-row bus-stop-row--mobile' : 'bus-stop-row'}
                   style={{
                     ...rowStyle,
                     ...(here ? rowHereStyle : {}),
+                    ...(isMobile ? {
+                      flexDirection: 'column',
+                      alignItems: 'stretch',
+                      textAlign: 'center',
+                    } : {}),
                   }}
                 >
-                  <div style={iconWrapStyle}>
+                  <div style={{
+                    ...iconWrapStyle,
+                    ...(isMobile ? { alignSelf: 'center' } : {}),
+                  }}>
                     <span style={{ fontSize: 28 }}>🗺️</span>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={rowTitleStyle}>
+                  <div style={{ flex: 1, minWidth: 0, width: isMobile ? '100%' : undefined }}>
+                    <div style={{
+                      ...rowTitleStyle,
+                      ...(isMobile ? { justifyContent: 'center' } : {}),
+                    }}>
                       {map.name}
                       {here && <span style={tagHereStyle}>AQUÍ</span>}
                       {map.comingSoon && <span style={tagSoonStyle}>PRÓXIMAMENTE</span>}
                     </div>
                     <div style={rowDescStyle}>{map.desc}</div>
                   </div>
-                  <div style={actionColStyle}>
+                  <div style={{
+                    ...actionColStyle,
+                    ...(isMobile ? { width: '100%' } : {}),
+                  }}>
                     {here ? (
                       <span style={hereLabelStyle}>Estás aquí</span>
                     ) : owned ? (
@@ -107,6 +125,7 @@ export function BusStopModal() {
                         style={{
                           ...actionBtnBase,
                           ...(state.money >= cost ? actionBtnActive : actionBtnDisabled),
+                          ...(isMobile ? { width: '100%' } : {}),
                         }}
                         disabled={state.money < cost}
                         onClick={() => travelTo(map.id)}
@@ -118,7 +137,10 @@ export function BusStopModal() {
                         )}
                       </button>
                     ) : map.comingSoon ? (
-                      <button style={actionBtnDisabled} disabled>
+                      <button
+                        style={{ ...actionBtnDisabled, ...(isMobile ? { width: '100%' } : {}) }}
+                        disabled
+                      >
                         BOLETO {formatNum(map.ticketCost)}
                       </button>
                     ) : (
@@ -126,6 +148,7 @@ export function BusStopModal() {
                         style={{
                           ...actionBtnBase,
                           ...(state.money >= map.ticketCost ? actionBtnActive : actionBtnDisabled),
+                          ...(isMobile ? { width: '100%' } : {}),
                         }}
                         disabled={state.money < map.ticketCost}
                         onClick={() => buyTicket(map.id)}

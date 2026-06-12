@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { formatNum } from '../utils/utils'
 import { ItemPixelIcon } from './shop/ShopPixelIcons'
 
@@ -67,11 +68,13 @@ function GoldCoin({ size = 18 }: { size?: number }) {
 }
 
 export function ShopModal({ title, money, items, onClose, pageSize = 3 }: ShopModalProps) {
+  const isMobile = useIsMobile()
+  const effectivePageSize = isMobile ? 1 : pageSize
   const [page, setPage] = useState(0)
-  const pages = Math.max(1, Math.ceil(items.length / pageSize))
+  const pages = Math.max(1, Math.ceil(items.length / effectivePageSize))
   const clampedPage = Math.min(page, pages - 1)
-  const start = clampedPage * pageSize
-  const visible = items.slice(start, start + pageSize)
+  const start = clampedPage * effectivePageSize
+  const visible = items.slice(start, start + effectivePageSize)
 
   return (
     <div className="modal-overlay" style={overlayStyle} onClick={onClose}>

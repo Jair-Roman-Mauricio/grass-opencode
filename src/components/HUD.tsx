@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { getCapacity } from '../game/economy'
+import { useIsMobile } from '../hooks/useIsMobile'
+import { VirtualJoystick } from './VirtualJoystick'
 
 /* ── Stardew Valley palette ── */
 const WOOD_DARK = '#5d2c00'
@@ -35,74 +37,121 @@ function computeDayInfo(day: number, dayClock: number, dayLength: number) {
 export function HUD() {
   const state = useGameStore((s) => s.state)
   const message = useGameStore((s) => s.message)
+  const toggleInventory = useGameStore((s) => s.toggleInventory)
+  const actionE = useGameStore((s) => s.mobileActionE)
+  const actionF = useGameStore((s) => s.mobileActionF)
+  const isMobile = useIsMobile()
 
   const capacity = getCapacity(state)
   const inParcela = state.currentMap === 0
+  const setInput = useGameStore.getState().setInput
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' }}>
-      {/* Top-left: empty space for MENU button */}
-      <div style={{
-        position: 'absolute', top: 12, left: 126,
-        display: 'flex', alignItems: 'flex-start', gap: 8,
-      }}>
-      </div>
+      {/* Backpack button (mobile) — beside Inicio */}
+      {isMobile && (
+        <button
+          type="button"
+          onClick={toggleInventory}
+          style={backpackBtnStyle}
+          aria-label="Inventario"
+        >
+          🎒
+        </button>
+      )}
 
-      {/* Top-center: load bar */}
+      {/* Load bar */}
       {inParcela && (
         <div style={{
-          position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
+          position: 'absolute',
+          top: isMobile ? 68 : 16,
+          left: isMobile ? 8 : '50%',
+          transform: isMobile ? 'none' : 'translateX(-50%)',
         }}>
-          <LoadBar value={state.mower.load} max={capacity} />
+          <LoadBar value={state.mower.load} max={capacity} compact={isMobile} />
         </div>
       )}
 
-      {/* Top-right: Stardew clock + money plaque + action buttons */}
+      {/* Top-right: Stardew clock + money plaque */}
       <div style={{
-        position: 'absolute', top: 12, right: 16,
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
+        position: 'absolute',
+        top: isMobile ? 8 : 12,
+        right: isMobile ? 8 : 16,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        gap: 6,
+        transform: isMobile ? 'scale(0.85)' : 'none',
+        transformOrigin: 'top right',
       }}>
         <StardewClockWidget />
         <StardewMoneyPlaque value={state.money} />
       </div>
 
-      <div className='mobile-controls' style={{
-        position: 'absolute', bottom: 24, left: 16,
-        gap: 10, pointerEvents: 'auto',
-        zIndex: 25,
-      }}>
-        <ControlBtn dir='←' onDown={() => useGameStore.getState().setInput({ left: true })}
-          onUp={() => useGameStore.getState().setInput({ left: false })} />
-        <ControlBtn dir='↑' onDown={() => useGameStore.getState().setInput({ up: true })}
-          onUp={() => useGameStore.getState().setInput({ up: false })} />
-        <ControlBtn dir='↓' onDown={() => useGameStore.getState().setInput({ down: true })}
-          onUp={() => useGameStore.getState().setInput({ down: false })} />
-        <ControlBtn dir='→' onDown={() => useGameStore.getState().setInput({ right: true })}
-          onUp={() => useGameStore.getState().setInput({ right: false })} />
+      {/* Joystick (mobile) */}
+      <div
+        className="mobile-joystick-wrap"
+        style={{
+          position: 'absolute',
+          bottom: 'calc(90px + env(safe-area-inset-bottom, 0px))',
+          left: 16,
+          pointerEvents: 'auto',
+          zIndex: 25,
+        }}
+      >
+        <VirtualJoystick />
+      </div>
+
+      {/* Action buttons (mobile) */}
+      <div
+        className="mobile-actions"
+        style={{
+          position: 'absolute',
+          bottom: 'calc(90px + env(safe-area-inset-bottom, 0px))',
+          right: 16,
+          pointerEvents: 'auto',
+          zIndex: 25,
+        }}
+      >
+        <ActionBtn
+          label={actionE}
+          onDown={() => setInput({ interact: true })}
+          onUp={() => setInput({ interact: false })}
+        />
+        <ActionBtn
+          label={actionF}
+          onDown={() => setInput({ interact2: true })}
+          onUp={() => setInput({ interact2: false })}
+        />
       </div>
 
       {message && (
-        <div style={{
-          position: 'fixed',
-          bottom: 'calc(148px + env(safe-area-inset-bottom, 0px))',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 60,
-          maxWidth: 'min(92vw, 420px)',
-          background: 'rgba(20, 12, 4, 0.92)',
-          color: CREAM,
-          padding: '10px 20px',
-          borderRadius: 8,
-          border: `2px solid ${WOOD_DARK}`,
-          fontFamily: PIXEL_FONT,
-          fontSize: 20,
-          fontWeight: 'bold',
-          textAlign: 'center',
-          lineHeight: 1.25,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.12)',
-          pointerEvents: 'none',
-          animation: 'fadeIn 0.2s',
-        }}>
+        <div
+          className={isMobile ? 'hud-message hud-message--mobile' : 'hud-message'}
+          style={{
+            position: 'fixed',
+            bottom: isMobile
+              ? 'calc(280px + env(safe-area-inset-bottom, 0px))'
+              : 'calc(148px + env(safe-area-inset-bottom, 0px))',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 60,
+            maxWidth: 'min(92vw, 420px)',
+            background: 'rgba(20, 12, 4, 0.92)',
+            color: CREAM,
+            padding: '10px 20px',
+            borderRadius: 8,
+            border: `2px solid ${WOOD_DARK}`,
+            fontFamily: PIXEL_FONT,
+            fontSize: isMobile ? 18 : 20,
+            fontWeight: 'bold',
+            textAlign: 'center',
+            lineHeight: 1.25,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.12)',
+            pointerEvents: 'none',
+            animation: 'fadeIn 0.2s',
+          }}
+        >
           {message}
         </div>
       )}
@@ -366,12 +415,15 @@ function StardewMoneyPlaque({ value }: { value: number }) {
    EXISTING WIDGETS (seed, load bar, controls)
    ═══════════════════════════════════════════ */
 
-function LoadBar({ value, max }: { value: number; max: number }) {
+function LoadBar({ value, max, compact = false }: { value: number; max: number; compact?: boolean }) {
   const pct = max > 0 ? Math.min(value / max, 1) : 0
   const full = value >= max && max > 0
 
   return (
-    <div style={loadBarContainerStyle}>
+    <div style={{
+      ...loadBarContainerStyle,
+      ...(compact ? { transform: 'scale(0.82)', transformOrigin: 'left center' } : {}),
+    }}>
       <div style={slotOuterStyle}>
         <div style={slotInnerStyle}>
           <GrassIcon />
@@ -437,30 +489,66 @@ function GrassIcon() {
   )
 }
 
-function ControlBtn({ dir, onDown, onUp }: { dir: string; onDown: () => void; onUp: () => void }) {
+function ActionBtn({ label, onDown, onUp }: { label: string; onDown: () => void; onUp: () => void }) {
   return (
     <button
-      style={{
-        width: 60, height: 60, fontSize: 26, border: '1px solid rgba(255,255,255,0.18)',
-        borderRadius: 14,
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 100%)',
-        color: '#fff', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25), inset 0 -1px 0 rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.4)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
-        textShadow: '0 1px 3px rgba(0,0,0,0.5)',
-      }}
+      type="button"
+      style={actionBtnStyle}
       onMouseDown={onDown}
       onMouseUp={onUp}
       onMouseLeave={onUp}
       onTouchStart={(e) => { e.preventDefault(); onDown() }}
       onTouchEnd={(e) => { e.preventDefault(); onUp() }}
+      onTouchCancel={(e) => { e.preventDefault(); onUp() }}
     >
-      {dir}
+      {label}
     </button>
   )
+}
+
+const actionBtnStyle: React.CSSProperties = {
+  minWidth: 72,
+  maxWidth: 96,
+  minHeight: 64,
+  padding: '8px 10px',
+  fontSize: 20,
+  fontWeight: 'bold',
+  fontFamily: PIXEL_FONT,
+  lineHeight: 1.1,
+  textAlign: 'center',
+  border: `3px solid ${WOOD_DARK}`,
+  borderRadius: 14,
+  background: `linear-gradient(180deg, ${WOOD_LIGHT} 0%, ${WOOD_MID} 50%, ${WOOD_DARK} 100%)`,
+  color: CREAM,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  touchAction: 'none',
+  boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.3), 0 3px 10px rgba(0,0,0,0.45)',
+  textShadow: `0 1px 0 ${WOOD_DARK}`,
+}
+
+const backpackBtnStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 8,
+  left: 126,
+  zIndex: 20,
+  width: 52,
+  height: 52,
+  border: `3px solid ${WOOD_DARK}`,
+  borderRadius: 8,
+  background: `linear-gradient(180deg, ${WOOD_LIGHT} 0%, ${WOOD_MID} 50%, ${WOOD_DARK} 100%)`,
+  color: CREAM,
+  cursor: 'pointer',
+  fontSize: 26,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  pointerEvents: 'auto',
+  boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.3), 0 3px 10px rgba(0,0,0,0.45)',
 }
 
 const loadBarContainerStyle: React.CSSProperties = {
