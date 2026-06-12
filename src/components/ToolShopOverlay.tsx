@@ -22,7 +22,7 @@ export function ToolShopOverlay() {
       sub: `Ancho ${tool.cutWidth}${tool.rideable ? ' · se monta' : ''}`,
       price: locked ? undefined : tool.cost,
       badge: owned ? (idx === state.tool ? 'EQUIPADO' : 'COMPRADO') : locked ? '🔒 BLOQUEADO' : undefined,
-      buyLabel: 'BUY',
+      buyLabel: 'COMPRAR',
       buyHidden: owned || locked,
       buyDisabled: !isNext || state.money < tool.cost,
       onBuy: () => buyTool(idx),

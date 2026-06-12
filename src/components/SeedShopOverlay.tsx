@@ -45,7 +45,7 @@ export function SeedShopOverlay() {
       name: seed.name,
       sub: `Tienes ${inv}/${cap}  ·  Vende $${seed.sellValue}${freeNote}`,
       price: seedEffectiveCost(state, seed.id),
-      buyLabel: inv >= cap ? 'MÁX' : 'BUY',
+      buyLabel: inv >= cap ? 'MÁX' : 'COMPRAR',
       buyDisabled: !canBuySeed(state, seed.id),
       onBuy: () => buySeed(seed.id),
       selectable: true,

@@ -29,6 +29,8 @@ interface GameStore {
   nearCorral: boolean
   showCorral: boolean
   showSettings: boolean
+  showInventory: boolean
+  activeSlot: number
   message: string | null
   messageTimer: number
 
@@ -82,6 +84,8 @@ interface GameStore {
   toggleCorral: () => void
   toggleSettings: () => void
   setShowSettings: (v: boolean) => void
+  toggleInventory: () => void
+  setActiveSlot: (slot: number) => void
   setNearShops: (near: { seed: boolean; tool: boolean }) => void
   showMessage: (msg: string) => void
   setPlaying: (v: boolean) => void
@@ -98,6 +102,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   nearCorral: false,
   showCorral: false,
   showSettings: false,
+  showInventory: false,
+  activeSlot: 0,
   message: null,
   messageTimer: 0,
 
@@ -462,6 +468,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setNearCorral: (near) => set((s) => (s.nearCorral === near ? {} : { nearCorral: near })),
   toggleSettings: () => set((s) => ({ showSettings: !s.showSettings })),
   setShowSettings: (v) => set({ showSettings: v }),
+  toggleInventory: () => {
+    const opening = !get().showInventory
+    audioManager[opening ? 'playOpen' : 'playClose']()
+    set((s) => ({ showInventory: !s.showInventory }))
+  },
+  setActiveSlot: (slot: number) => {
+    const s = get()
+    // Sincronizar selectedSeed si se selecciona una de las casillas de semillas (1 = pasto, 2 = trebol, 3 = trigo, 4 = girasol, 5 = cannabis)
+    const seedIds: SeedId[] = ['pasto', 'trebol', 'trigo', 'girasol', 'cannabis']
+    let patchState = { ...s.state }
+    if (slot >= 1 && slot <= 5) {
+      const selectedSeedId = seedIds[slot - 1]
+      // Solo seleccionamos si el tier de esa semilla está desbloqueado
+      if (getSeedDef(selectedSeedId).tier <= s.state.seedTierUnlocked) {
+        patchState.selectedSeed = selectedSeedId
+      }
+    }
+    set({ activeSlot: slot, state: patchState })
+  },
   toggleCorral: () => {
     const opening = !get().showCorral
     audioManager[opening ? 'playOpen' : 'playClose']()

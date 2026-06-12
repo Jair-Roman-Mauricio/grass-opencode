@@ -12,6 +12,7 @@ import { DeathNewspaperOverlay } from '../components/DeathNewspaperOverlay'
 import { SettingsModal } from '../components/SettingsModal'
 import { BillCollectorOverlay } from '../components/BillCollectorOverlay'
 import { GameOverScreen } from '../components/GameOverScreen'
+import { InventoryOverlay } from '../components/InventoryOverlay'
 
 interface Game3DScreenProps {
   onBack: () => void
@@ -145,6 +146,16 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
         e.preventDefault()
       }
 
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        useGameStore.getState().toggleInventory()
+      }
+
+      if (e.key >= '1' && e.key <= '6') {
+        const slotIdx = parseInt(e.key) - 1
+        useGameStore.getState().setActiveSlot(slotIdx)
+      }
+
       if (e.key === 'Escape') {
         e.preventDefault()
         // ESC abre/cierra el menú de ajustes (ya no sale al menú; eso es el botón MENU).
@@ -250,6 +261,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       {isPlaying && (
         <>
           <HUD />
+          <InventoryOverlay />
           <SeedShopOverlay />
           <ToolShopOverlay />
           <CorralModal />
@@ -265,21 +277,21 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
         onClick={() => { useGameStore.getState().save(); onBack() }}
         style={menuBtnStyle}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'linear-gradient(180deg, #7a8498 0%, #5a6478 50%, #3a4258 100%)'
+          e.currentTarget.style.background = 'linear-gradient(180deg, #e8a050 0%, #c87828 50%, #8b4513 100%)'
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'linear-gradient(180deg, #6a7488 0%, #4a5468 50%, #2a3142 100%)'
+          e.currentTarget.style.background = 'linear-gradient(180deg, #d4883a 0%, #b15e1a 50%, #5d2c00 100%)'
         }}
         onMouseDown={(e) => {
-          e.currentTarget.style.boxShadow = 'inset 0 2px 0 rgba(0,0,0,0.3), 0 0 0 1px #1a1a25'
+          e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.4)'
           e.currentTarget.style.transform = 'translateY(1px)'
         }}
         onMouseUp={(e) => {
-          e.currentTarget.style.boxShadow = 'inset 0 2px 0 rgba(255,255,255,0.25), inset 0 -2px 0 rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.4)'
+          e.currentTarget.style.boxShadow = 'inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.3), 0 3px 10px rgba(0,0,0,0.45)'
           e.currentTarget.style.transform = 'translateY(0)'
         }}
       >
-        MENU
+        Inicio
       </button>
     </div>
   )
@@ -288,17 +300,17 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
 const menuBtnStyle: React.CSSProperties = {
   position: 'absolute', top: 8, left: 8, zIndex: 20,
   width: 110, height: 52,
-  border: '2px solid #7a8498',
+  border: '3px solid #5d2c00',
   borderRadius: 8,
-  background: 'linear-gradient(180deg, #6a7488 0%, #4a5468 50%, #2a3142 100%)',
-  color: '#e8eaf0',
+  background: 'linear-gradient(180deg, #d4883a 0%, #b15e1a 50%, #5d2c00 100%)',
+  color: '#f8d6a4',
   cursor: 'pointer',
   fontWeight: 700,
-  fontSize: 16,
-  letterSpacing: 4,
-  fontFamily: "'Cinzel', 'Times New Roman', serif",
-  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-  textTransform: 'uppercase',
-  boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.25), inset 0 -2px 0 rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.4)',
+  fontSize: 22,
+  letterSpacing: 2,
+  fontFamily: "'VT323', monospace",
+  textShadow: '0 1px 0 #5d2c00',
+  textTransform: 'none',
+  boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.3), 0 3px 10px rgba(0,0,0,0.45)',
   transition: 'background 0.15s, box-shadow 0.15s, transform 0.1s',
 }

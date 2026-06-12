@@ -42,6 +42,10 @@ export class WebGLRenderer implements GameRenderer {
   private toolNpc!: NPCRenderer
   private effectRenderer!: EffectRenderer
 
+  private ambientLight!: THREE.AmbientLight
+  private hemiLight!: THREE.HemisphereLight
+  private sunLight!: THREE.DirectionalLight
+
   /** Mapa que se está renderizando (0 = parcela, 1 = pueblo). */
   private map = 0
   private nearLab = false
@@ -87,24 +91,24 @@ export class WebGLRenderer implements GameRenderer {
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
 
-    const ambient = new THREE.AmbientLight(0x404060, 0.4)
-    this.scene.add(ambient)
+    this.ambientLight = new THREE.AmbientLight(0x404060, 0.4)
+    this.scene.add(this.ambientLight)
 
-    const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3a7d3a, 0.6)
-    this.scene.add(hemi)
+    this.hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x3a7d3a, 0.6)
+    this.scene.add(this.hemiLight)
 
-    const sun = new THREE.DirectionalLight(0xffeedd, 1.5)
-    sun.position.set(20, 30, 10)
-    sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
-    const sc = sun.shadow.camera as THREE.OrthographicCamera
+    this.sunLight = new THREE.DirectionalLight(0xffeedd, 1.5)
+    this.sunLight.position.set(20, 30, 10)
+    this.sunLight.castShadow = true
+    this.sunLight.shadow.mapSize.set(2048, 2048)
+    const sc = this.sunLight.shadow.camera as THREE.OrthographicCamera
     sc.near = 0.5
     sc.far = 80
     sc.left = -40
     sc.right = 40
     sc.top = 40
     sc.bottom = -40
-    this.scene.add(sun)
+    this.scene.add(this.sunLight)
 
     this.worldBuilder = new WorldBuilder(this.scene)
     this.townBuilder = new TownBuilder(this.scene)
@@ -135,6 +139,8 @@ export class WebGLRenderer implements GameRenderer {
     if (!this.scene || !this.camera || !this.renderer) return
     this.state = state
     this.ticks++
+
+    this.updateLighting()
 
     if (this.map === 1) {
       this.renderTown(dt, input)
@@ -904,5 +910,155 @@ export class WebGLRenderer implements GameRenderer {
       if (this.pointHitsAABB(px, pz, radius, aabb)) return true
     }
     return false
+  }
+
+  private updateLighting(): void {
+    if (!this.scene) return
+    const store = useGameStore.getState()
+    const dayClock = store.dayClock
+    const dayLength = store.dayLength || 180000
+    const f = 1 - Math.max(0, Math.min(1, dayClock / dayLength))
+
+    const skyColor = new THREE.Color()
+    const fogColor = new THREE.Color()
+    const ambientColor = new THREE.Color()
+    let ambientIntensity = 0.4
+    const hemiSkyColor = new THREE.Color()
+    const hemiGroundColor = new THREE.Color()
+    let hemiIntensity = 0.6
+    const dirLightColor = new THREE.Color()
+    let dirLightIntensity = 1.5
+    let dirLightX = 20
+    let dirLightY = 30
+    let dirLightZ = 10
+
+    // Colores clave para el cielo y niebla
+    const daySky = new THREE.Color(0x7ec8e3)
+    const dayFog = new THREE.Color(0x7ec8e3)
+
+    const sunsetSky = new THREE.Color(0xd95d39) // naranja-rojizo cálido
+    const sunsetFog = new THREE.Color(0x502840) // púrpura profundo
+
+    const nightSky = new THREE.Color(0x070b1a) // azul-negro noche profunda
+    const nightFog = new THREE.Color(0x070b1a)
+
+    const sunriseSky = new THREE.Color(0xfca25d)
+
+    // Lógica de interpolación según fases del día (f = 0.0 es 6:00 AM, f = 1.0 es ~2:00 AM)
+    if (f < 0.12) {
+      // Amanecer: noche -> amanecer -> día
+      const t = f / 0.12
+      if (t < 0.5) {
+        const t2 = t * 2
+        skyColor.copy(nightSky).lerp(sunriseSky, t2)
+        fogColor.copy(nightFog).lerp(sunriseSky, t2)
+        ambientColor.setHex(0x101428).lerp(new THREE.Color(0x3a2a30), t2)
+        ambientIntensity = 0.15 + t2 * 0.15
+        hemiSkyColor.setHex(0x1a2040).lerp(new THREE.Color(0x995040), t2)
+        hemiGroundColor.setHex(0x102010).lerp(new THREE.Color(0x2a3d2a), t2)
+        hemiIntensity = 0.15 + t2 * 0.25
+        dirLightColor.setHex(0xffaa44)
+        dirLightIntensity = t2 * 0.8
+      } else {
+        const t2 = (t - 0.5) * 2
+        skyColor.copy(sunriseSky).lerp(daySky, t2)
+        fogColor.copy(sunriseSky).lerp(dayFog, t2)
+        ambientColor.setHex(0x3a2a30).lerp(new THREE.Color(0x404060), t2)
+        ambientIntensity = 0.3 + t2 * 0.1
+        hemiSkyColor.setHex(0x995040).lerp(new THREE.Color(0x87ceeb), t2)
+        hemiGroundColor.setHex(0x2a3d2a).lerp(new THREE.Color(0x3a7d3a), t2)
+        hemiIntensity = 0.4 + t2 * 0.2
+        dirLightColor.copy(new THREE.Color(0xffaa44)).lerp(new THREE.Color(0xffeedd), t2)
+        dirLightIntensity = 0.8 + t2 * 0.7
+      }
+      const angle = t * (Math.PI / 3)
+      dirLightX = -30 * Math.cos(angle)
+      dirLightY = 30 * Math.sin(angle)
+      dirLightZ = 10
+    } else if (f < 0.55) {
+      // Día pleno constante
+      skyColor.copy(daySky)
+      fogColor.copy(dayFog)
+      ambientColor.setHex(0x404060)
+      ambientIntensity = 0.4
+      hemiSkyColor.setHex(0x87ceeb)
+      hemiGroundColor.setHex(0x3a7d3a)
+      hemiIntensity = 0.6
+      dirLightColor.setHex(0xffeedd)
+      dirLightIntensity = 1.5
+
+      const t = (f - 0.12) / (0.55 - 0.12)
+      const angle = (Math.PI / 3) + t * (Math.PI / 3)
+      dirLightX = -30 * Math.cos(angle)
+      dirLightY = 30 * Math.sin(angle)
+      dirLightZ = 10
+    } else if (f < 0.70) {
+      // Atardecer: día -> sunset -> noche
+      const t = (f - 0.55) / (0.70 - 0.55)
+      if (t < 0.5) {
+        const t2 = t * 2
+        skyColor.copy(daySky).lerp(sunsetSky, t2)
+        fogColor.copy(dayFog).lerp(sunsetFog, t2)
+        ambientColor.setHex(0x404060).lerp(new THREE.Color(0x503550), t2)
+        ambientIntensity = 0.4 - t2 * 0.1
+        hemiSkyColor.setHex(0x87ceeb).lerp(new THREE.Color(0xc05050), t2)
+        hemiGroundColor.setHex(0x3a7d3a).lerp(new THREE.Color(0x2d3a1f), t2)
+        hemiIntensity = 0.6 - t2 * 0.3
+        dirLightColor.setHex(0xffeedd).lerp(new THREE.Color(0xff4500), t2)
+        dirLightIntensity = 1.5 - t2 * 1.0
+      } else {
+        const t2 = (t - 0.5) * 2
+        skyColor.copy(sunsetSky).lerp(nightSky, t2)
+        fogColor.copy(sunsetFog).lerp(nightFog, t2)
+        ambientColor.setHex(0x503550).lerp(new THREE.Color(0x101428), t2)
+        ambientIntensity = 0.3 - t2 * 0.15
+        hemiSkyColor.setHex(0xc05050).lerp(new THREE.Color(0x1a2040), t2)
+        hemiGroundColor.setHex(0x2d3a1f).lerp(new THREE.Color(0x102010), t2)
+        hemiIntensity = 0.3 - t2 * 0.15
+        dirLightColor.setHex(0xff4500).lerp(new THREE.Color(0xb0c4de), t2)
+        dirLightIntensity = 0.5 - t2 * 0.1
+      }
+      const angle = (2 * Math.PI / 3) + t * (Math.PI / 3)
+      dirLightX = -30 * Math.cos(angle)
+      dirLightY = 30 * Math.sin(angle)
+      dirLightZ = 10
+    } else {
+      // Noche (Luz de Luna)
+      skyColor.copy(nightSky)
+      fogColor.copy(nightFog)
+      ambientColor.setHex(0x101428)
+      ambientIntensity = 0.15
+      hemiSkyColor.setHex(0x1a2040)
+      hemiGroundColor.setHex(0x102010)
+      hemiIntensity = 0.15
+      dirLightColor.setHex(0xb0c4de)
+      dirLightIntensity = 0.4
+
+      const t = (f - 0.70) / (1.0 - 0.70)
+      const angle = Math.PI + t * (Math.PI * 0.6)
+      dirLightX = -35 * Math.cos(angle)
+      dirLightY = Math.max(10, 35 * Math.sin(angle))
+      dirLightZ = -10
+    }
+
+    this.scene.background = skyColor
+    if (this.scene.fog) {
+      this.scene.fog.color = fogColor
+    }
+
+    if (this.ambientLight) {
+      this.ambientLight.color.copy(ambientColor)
+      this.ambientLight.intensity = ambientIntensity
+    }
+    if (this.hemiLight) {
+      this.hemiLight.color.copy(hemiSkyColor)
+      this.hemiLight.groundColor.copy(hemiGroundColor)
+      this.hemiLight.intensity = hemiIntensity
+    }
+    if (this.sunLight) {
+      this.sunLight.color.copy(dirLightColor)
+      this.sunLight.intensity = dirLightIntensity
+      this.sunLight.position.set(dirLightX, dirLightY, dirLightZ)
+    }
   }
 }
