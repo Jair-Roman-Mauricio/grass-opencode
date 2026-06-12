@@ -12,7 +12,10 @@
     "dev:api": "tsx watch server/index.ts",
     "dev:all": "concurrently -k -n vite,api,db -c green,cyan,magenta \"pnpm dev\" \"pnpm dev:api\" \"pnpm dev:db\"",
     "build": "tsc -p tsconfig.json && vite build",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "tsc -p tsconfig.server.build.json",
+    "docker:prod": "docker compose -f docker-compose.prod.yml up -d --build",
+    "docker:prod:down": "docker compose -f docker-compose.prod.yml down",
+    "docker:prod:logs": "docker compose -f docker-compose.prod.yml logs -f",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit"
   },

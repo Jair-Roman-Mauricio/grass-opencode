@@ -17,8 +17,10 @@ export class WorldBuilder {
   // Padding extra para que el jugador no se "pegue" visualmente al muro
   barnPadding: number = 0.1
   private tileMesh!: THREE.InstancedMesh
+  private tilledMesh!: THREE.InstancedMesh
   private tileColors: Float32Array
   private tileDummy = new THREE.Object3D()
+  private tilledDummy = new THREE.Object3D()
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
@@ -64,6 +66,7 @@ export class WorldBuilder {
 
   build(grassMap?: Record<string, number>): void {
     this.createTileGround(grassMap)
+    this.createTilledGround()
     this.createGridBorders()
     this.createShop(15, 15)
     // Puestos de vendedores (semillas y herramientas).
@@ -261,6 +264,126 @@ export class WorldBuilder {
     this.scene.add(g)
   }
 
+  /** Textura de surcos oscuros + brillo húmedo en los caballones. */
+  private createTilledSoilTexture(): THREE.CanvasTexture {
+    const w = 128
+    const h = 128
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')!
+    const imageData = ctx.createImageData(w, h)
+    const furrows = 4
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const u = x / w
+        const v = y / h
+        const wave = Math.sin(u * Math.PI * furrows * 2)
+        const t = wave * 0.5 + 0.5 // 0 = surco, 1 = caballón
+
+        const troughR = 52
+        const troughG = 32
+        const troughB = 18
+        const ridgeR = 138
+        const ridgeG = 88
+        const ridgeB = 50
+        const shine = Math.pow(t, 0.65)
+
+        let r = troughR + (ridgeR - troughR) * shine
+        let g = troughG + (ridgeG - troughG) * shine
+        let b = troughB + (ridgeB - troughB) * shine
+
+        // Brillos de humedad en caballones
+        if (t > 0.6) {
+          const spec = (Math.sin(v * 48 + u * 10) * 0.5 + 0.5) * (t - 0.6) * 2.2
+          r += spec * 42
+          g += spec * 32
+          b += spec * 18
+        }
+
+        // Surcos más oscuros y ligeramente más fríos (tierra regada)
+        if (t < 0.32) {
+          r -= 8
+          g -= 4
+          b += 6
+        }
+
+        const n = ((x * 17 + y * 31) % 13) - 6
+        r = Math.max(0, Math.min(255, r + n))
+        g = Math.max(0, Math.min(255, g + n * 0.8))
+        b = Math.max(0, Math.min(255, b + n * 0.6))
+
+        const i = (y * w + x) * 4
+        imageData.data[i] = r
+        imageData.data[i + 1] = g
+        imageData.data[i + 2] = b
+        imageData.data[i + 3] = 255
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0)
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    tex.magFilter = THREE.NearestFilter
+    tex.minFilter = THREE.LinearMipmapLinearFilter
+    tex.generateMipmaps = true
+    tex.colorSpace = THREE.SRGBColorSpace
+    return tex
+  }
+
+  /** Geometría con surcos elevados (relieve 3D por tile). */
+  private createFurrowTileGeometry(): THREE.BufferGeometry {
+    const furrows = 4
+    const segsX = furrows * 5
+    const segsZ = 6
+    const geo = new THREE.PlaneGeometry(0.96, 0.96, segsX, segsZ)
+    geo.rotateX(-Math.PI / 2)
+
+    const pos = geo.attributes.position
+    for (let i = 0; i < pos.count; i++) {
+      const lx = pos.getX(i)
+      const lz = pos.getZ(i)
+      const u = (lx + 0.48) / 0.96
+      const wave = Math.sin(u * Math.PI * furrows * 2)
+      const ridge = wave * 0.5 + 0.5
+      const height = 0.006 + ridge * 0.034
+      const along = Math.sin(lz * 14 + u * 3) * 0.002
+      pos.setY(i, height + along)
+    }
+    pos.needsUpdate = true
+    geo.computeVertexNormals()
+    return geo
+  }
+
+  /** Capa instanciada de tierra harada (visible solo en tiles plantados). */
+  private createTilledGround(): void {
+    const geo = this.createFurrowTileGeometry()
+    const mat = new THREE.MeshStandardMaterial({
+      map: this.createTilledSoilTexture(),
+      color: 0xffffff,
+      roughness: 0.34,
+      metalness: 0.1,
+    })
+
+    this.tilledMesh = new THREE.InstancedMesh(geo, mat, ROWS * COLS)
+    this.tilledMesh.castShadow = false
+    this.tilledMesh.receiveShadow = true
+    this.tilledMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const idx = r * COLS + c
+        this.tilledDummy.position.set(c + 0.5, 0, r + 0.5)
+        this.tilledDummy.scale.set(0, 0, 0)
+        this.tilledDummy.updateMatrix()
+        this.tilledMesh.setMatrixAt(idx, this.tilledDummy.matrix)
+      }
+    }
+    this.tilledMesh.instanceMatrix.needsUpdate = true
+    this.scene.add(this.tilledMesh)
+  }
+
   private createNoiseTexture(): THREE.CanvasTexture {
     const size = 64
     const canvas = document.createElement('canvas')
@@ -324,18 +447,31 @@ export class WorldBuilder {
     this.scene.add(this.tileMesh)
   }
 
-  updateGroundTile(r: number, c: number, hasGrass: boolean): void {
+  /** `tilled`: true = suelo harado con surcos y relieve; false = césped base. */
+  updateGroundTile(r: number, c: number, tilled: boolean): void {
     if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return
     const idx = r * COLS + c
-    if (hasGrass) {
-      this.tileColors[idx * 3] = 74 / 255
-      this.tileColors[idx * 3 + 1] = 122 / 255
-      this.tileColors[idx * 3 + 2] = 46 / 255
+
+    this.tilledDummy.position.set(c + 0.5, 0, r + 0.5)
+    this.tilledDummy.rotation.set(0, 0, 0)
+
+    if (tilled) {
+      const v = ((r * 7 + c * 13) % 5) - 2
+      // Base oscura bajo el relieve (surcos húmedos).
+      this.tileColors[idx * 3] = (48 + v) / 255
+      this.tileColors[idx * 3 + 1] = (30 + Math.floor(v / 2)) / 255
+      this.tileColors[idx * 3 + 2] = (18 + v) / 255
+      this.tilledDummy.scale.set(1, 1, 1)
     } else {
       this.tileColors[idx * 3] = 42 / 255
       this.tileColors[idx * 3 + 1] = 61 / 255
       this.tileColors[idx * 3 + 2] = 24 / 255
+      this.tilledDummy.scale.set(0, 0, 0)
     }
+
+    this.tilledDummy.updateMatrix()
+    this.tilledMesh.setMatrixAt(idx, this.tilledDummy.matrix)
+    this.tilledMesh.instanceMatrix.needsUpdate = true
     this.tileMesh.instanceColor!.needsUpdate = true
   }
 

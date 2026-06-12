@@ -9,6 +9,7 @@ import { PlayerRenderer } from './PlayerRenderer'
 import { NPCRenderer } from './NPCRenderer'
 import { TownBuilder } from './TownBuilder'
 import { EffectRenderer } from './EffectRenderer'
+import { GrowthBarRenderer } from './GrowthBarRenderer'
 import {
   BUYER_X,
   BUYER_Z,
@@ -20,6 +21,8 @@ import { audioManager } from '../../audio/AudioManager'
 import { useGameStore } from '../../store/gameStore'
 
 const SHOP_RADIUS = 2.4 // distancia para activar el modal de un vendedor
+/** Cuánto tiempo se muestra cada hint contextual antes de ocultarse. */
+const HINT_DURATION_MS = 4000
 
 const ROWS = 30
 const COLS = 30
@@ -41,6 +44,7 @@ export class WebGLRenderer implements GameRenderer {
   private seedNpc!: NPCRenderer
   private toolNpc!: NPCRenderer
   private effectRenderer!: EffectRenderer
+  private growthBarRenderer!: GrowthBarRenderer
 
   private ambientLight!: THREE.AmbientLight
   private hemiLight!: THREE.HemisphereLight
@@ -56,6 +60,10 @@ export class WebGLRenderer implements GameRenderer {
   private lastFPressed = false
   private controlsHint: HTMLElement | null = null
   private mountHint: HTMLElement | null = null
+  private hintMessage = ''
+  private hintContextKey = ''
+  private hintShownAt = 0
+  private hintConditionActive = false
   private lastChimeTime = 0
   private wasLoadFull = false
   private cinematicCamera: {
@@ -119,6 +127,7 @@ export class WebGLRenderer implements GameRenderer {
     this.seedNpc = new NPCRenderer(this.scene)
     this.toolNpc = new NPCRenderer(this.scene)
     this.effectRenderer = new EffectRenderer(this.scene)
+    this.growthBarRenderer = new GrowthBarRenderer(this.scene)
 
     this.playerRenderer.onStep = () => {
       if (this.playerRenderer.person.moving && this.playerRenderer.person.state === 'walk') {
@@ -168,6 +177,7 @@ export class WebGLRenderer implements GameRenderer {
     this.grassRenderer.updateAnimation()
     this.grassRenderer.tick(dt)
     this.updateCamera()
+    this.growthBarRenderer.updateFacing(this.camera)
     this.updateMountHint(input)
 
     // El carrito solo es visible cuando se ha comprado (herramienta rideable).
@@ -266,6 +276,7 @@ export class WebGLRenderer implements GameRenderer {
       const newH = Math.round(plot.growth * def.maxHeight)
       const [r, c] = key.split(',').map(Number)
       this.grassRenderer.setTileGrowth(r, c, plot.growth)
+      this.growthBarRenderer.setGrowth(r, c, plot.growth)
       if (newH !== prevH) changed = true
     }
     if (changed) this.persistPlots()
@@ -318,6 +329,7 @@ export class WebGLRenderer implements GameRenderer {
   destroy(): void {
     this.effectRenderer.clearAll()
     this.grassRenderer.clearAll()
+    this.growthBarRenderer.clearAll()
     this.renderer?.dispose()
     this.renderer = null
     this.scene = null
@@ -350,10 +362,12 @@ export class WebGLRenderer implements GameRenderer {
     this.grassRenderer.init()
     this.grassRenderer.hydrate(this.plots)
     this.worldBuilder.build()
-    // Pintar de verde el suelo de los tiles plantados.
+    this.growthBarRenderer.init()
+    // Pintar de harado marrón el suelo de los tiles plantados.
     for (const k of Object.keys(this.plots)) {
       const [r, c] = k.split(',').map(Number)
       this.worldBuilder.updateGroundTile(r, c, true)
+      this.growthBarRenderer.setTile(r, c, this.plots[k].growth)
     }
 
     this.mowerRenderer.build()
@@ -619,6 +633,7 @@ export class WebGLRenderer implements GameRenderer {
     this.plots[key] = { type: seed, growth: 0 }
     this.grassRenderer.addTile(r, c, seed, 0)
     this.worldBuilder.updateGroundTile(r, c, true)
+    this.growthBarRenderer.setTile(r, c, 0)
     this.persistPlots()
 
     useGameStore.setState((s) => ({
@@ -660,6 +675,7 @@ export class WebGLRenderer implements GameRenderer {
         delete this.plots[key]
         this.grassRenderer.removeTile(tr, tc)
         this.worldBuilder.updateGroundTile(tr, tc, false)
+        this.growthBarRenderer.removeTile(tr, tc)
         this.persistPlots()
 
         load = Math.min(capacity, load + cut)
@@ -837,51 +853,61 @@ export class WebGLRenderer implements GameRenderer {
     const store = useGameStore.getState()
     const state = store.state
 
-    if (p.state !== 'walk') {
+    let message: string | null = null
+    let contextKey = ''
+
+    if (p.state === 'walk') {
+      if (store.nearSeedShop) {
+        message = 'Presiona <b>F</b> para comprar semillas'
+        contextKey = 'seed-shop'
+      } else if (store.nearToolShop) {
+        message = 'Presiona <b>F</b> para comprar herramientas'
+        contextKey = 'tool-shop'
+      } else if (store.nearBusStop) {
+        message = 'Presiona <b>F</b> para tomar el autobús'
+        contextKey = 'bus'
+      } else if (store.nearCorral) {
+        message = 'Presiona <b>F</b> para ampliar la capacidad'
+        contextKey = 'corral'
+      } else {
+        const md = Math.sqrt((p.x - state.mower.x) ** 2 + (p.z - state.mower.y) ** 2)
+        if (getCurrentTool(state).rideable && md < 2.5) {
+          message = 'Presiona <b>E</b> para subirte'
+          contextKey = 'mount'
+        } else {
+          const key = Math.floor(p.z) + ',' + Math.floor(p.x)
+          if (!this.plots[key] && (state.seeds[state.selectedSeed] ?? 0) > 0) {
+            const name = getSeedDef(state.selectedSeed).name
+            message = `Presiona <b>E</b> para plantar ${name}`
+            contextKey = `plant:${key}:${state.selectedSeed}`
+          }
+        }
+      }
+    }
+
+    if (!message) {
+      this.hintConditionActive = false
+      this.hintMessage = ''
+      this.hintContextKey = ''
       this.mountHint.style.opacity = '0'
       return
     }
 
-    // 1) Vendedor cercano → F para comprar
-    if (store.nearSeedShop) {
-      this.mountHint.style.opacity = '1'
-      this.mountHint.innerHTML = 'Presiona <b>F</b> para comprar semillas'
-      return
-    }
-    if (store.nearToolShop) {
-      this.mountHint.style.opacity = '1'
-      this.mountHint.innerHTML = 'Presiona <b>F</b> para comprar herramientas'
-      return
-    }
-    if (store.nearBusStop) {
-      this.mountHint.style.opacity = '1'
-      this.mountHint.innerHTML = 'Presiona <b>F</b> para tomar el autobús'
-      return
-    }
-    if (store.nearCorral) {
-      this.mountHint.style.opacity = '1'
-      this.mountHint.innerHTML = 'Presiona <b>F</b> para ampliar la capacidad'
-      return
+    const now = performance.now()
+    if (
+      !this.hintConditionActive
+      || message !== this.hintMessage
+      || contextKey !== this.hintContextKey
+    ) {
+      this.hintMessage = message
+      this.hintContextKey = contextKey
+      this.hintShownAt = now
+      this.hintConditionActive = true
+      this.mountHint.innerHTML = message
     }
 
-    // 2) Cerca del carrito (si lo tienes) → E para subir
-    const md = Math.sqrt((p.x - state.mower.x) ** 2 + (p.z - state.mower.y) ** 2)
-    if (getCurrentTool(state).rideable && md < 2.5) {
-      this.mountHint.style.opacity = '1'
-      this.mountHint.innerHTML = 'Presiona <b>E</b> para subirte'
-      return
-    }
-
-    // 3) Tile vacío con semilla disponible → E para plantar
-    const key = Math.floor(p.z) + ',' + Math.floor(p.x)
-    if (!this.plots[key] && (state.seeds[state.selectedSeed] ?? 0) > 0) {
-      this.mountHint.style.opacity = '1'
-      const name = getSeedDef(state.selectedSeed).name
-      this.mountHint.innerHTML = `Presiona <b>E</b> para plantar ${name}`
-      return
-    }
-
-    this.mountHint.style.opacity = '0'
+    const visible = now - this.hintShownAt < HINT_DURATION_MS
+    this.mountHint.style.opacity = visible ? '1' : '0'
   }
 
   /**

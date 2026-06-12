@@ -1,0 +1,21 @@
+# API Express + PostgreSQL (producción)
+FROM node:20-alpine AS deps
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY tsconfig.server.build.json ./
+COPY server ./server
+RUN pnpm exec tsc -p tsconfig.server.build.json
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+COPY --from=build /app/dist-server ./dist-server
+EXPOSE 3001
+CMD ["node", "dist-server/index.js"]
