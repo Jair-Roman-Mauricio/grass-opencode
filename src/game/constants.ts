@@ -1,7 +1,37 @@
-import type { UpgradeDef, AreaDef, SeedDef, ToolDef } from './types'
+import type { UpgradeDef, AreaDef, SeedDef, ToolDef, MapDef } from './types'
 
-export const SAVE_VERSION = 2
+export const SAVE_VERSION = 5
 export const SAVE_KEY = 'stoneGrassSave'
+
+// --- Mapas (progresión por boletos de autobús) ---
+export const MAPS: MapDef[] = [
+  { id: 0, name: 'La Parcela', ticketCost: 0, desc: 'Tu herencia. Pasto, silencio y deudas.' },
+  { id: 1, name: 'El Pueblo', ticketCost: 1500, desc: 'Más gente, más problemas, mejores clientes.' },
+]
+
+/** Duración del día base (ms). Al agotarse aparece el cobrador de cuentas. */
+export const DAY_LENGTH_MS = 180000 // 3 minutos
+/** El cobrador llega antes con cada nueva CALIDAD de semilla desbloqueada… */
+export const DAY_LENGTH_STEP_MS = 30000 // 30 s menos por calidad
+/** …hasta un mínimo (para que siga siendo jugable). */
+export const DAY_LENGTH_MIN_MS = 60000 // 1 minuto
+
+/**
+ * Duración del día según la calidad de semilla más alta desbloqueada (`tier`):
+ * arranca en 3 min (tier 0 = solo pasto) y se acorta 30 s por cada calidad nueva,
+ * con un suelo de 1 min. No depende del número de día.
+ */
+export function getDayLength(tier: number): number {
+  return Math.max(DAY_LENGTH_MIN_MS, DAY_LENGTH_MS - tier * DAY_LENGTH_STEP_MS)
+}
+
+/** Deudas mínimas que hay que pagar cada día para sobrevivir. */
+export const MIN_DEBTS_TO_PAY = 2
+/** Tarifa para volver a un mapa anterior que NO sea el mapa 0 (gratis). */
+export const RETURN_FARE = 100
+
+/** Familia del protagonista (sufren si dejas deudas esenciales sin pagar). */
+export const FAMILY = ['Esposa', 'Hijo', 'Suegra']
 
 export const TILE_SIZE = 32
 export const GRID_SIZE = 40
@@ -12,12 +42,18 @@ export const BAR_CENTER_X = 19
 export const BAR_CENTER_Y = 19
 export const DEPOSIT_RADIUS = 3
 
+// Comprador (NPC junto al granero): solo se vende al acercarse a ÉL, no al edificio.
+export const BUYER_X = 15.7
+export const BUYER_Z = 17.2
+export const BUYER_RADIUS = 1.8
+
 export const UPGRADES: UpgradeDef[] = [
   {
     id: 'speed',
     name: 'Velocidad',
     icon: '\u26A1',
     desc: 'Velocidad de la cortadora',
+    // La velocidad ya no se mejora (no hay tienda): se queda en la base de siempre.
     levels: [
       { cost: 0, value: 1.0 },
       { cost: 50, value: 1.3 },
@@ -81,11 +117,11 @@ export const AREAS: AreaDef[] = [
 
 // --- Semillas (tier 0 = pasto gratis, tier 4 = cannabis) ---
 export const SEEDS: SeedDef[] = [
-  { id: 'pasto',    name: 'Pasto',    icon: '🌱', tier: 0, unlockCost: 0,    seedCost: 0,   valueMult: 1,  growSeconds: 12, maxHeight: 5 },
-  { id: 'trebol',   name: 'Trébol',   icon: '🍀', tier: 1, unlockCost: 150,  seedCost: 10,  valueMult: 2,  growSeconds: 18, maxHeight: 5 },
-  { id: 'trigo',    name: 'Trigo',    icon: '🌾', tier: 2, unlockCost: 500,  seedCost: 30,  valueMult: 4,  growSeconds: 25, maxHeight: 5 },
-  { id: 'girasol',  name: 'Girasol',  icon: '🌻', tier: 3, unlockCost: 1500, seedCost: 80,  valueMult: 8,  growSeconds: 35, maxHeight: 5 },
-  { id: 'cannabis', name: 'Cannabis', icon: '🌿', tier: 4, unlockCost: 5000, seedCost: 250, valueMult: 20, growSeconds: 50, maxHeight: 5 },
+  { id: 'pasto',    name: 'Pasto',    icon: '🌱', tier: 0, unlockCost: 0,    seedCost: 5,   sellValue: 6,   growSeconds: 12, maxHeight: 5 },
+  { id: 'trebol',   name: 'Trébol',   icon: '🍀', tier: 1, unlockCost: 150,  seedCost: 10,  sellValue: 28,  growSeconds: 20, maxHeight: 5 },
+  { id: 'trigo',    name: 'Trigo',    icon: '🌾', tier: 2, unlockCost: 500,  seedCost: 30,  sellValue: 75,  growSeconds: 30, maxHeight: 5 },
+  { id: 'girasol',  name: 'Girasol',  icon: '🌻', tier: 3, unlockCost: 1500, seedCost: 80,  sellValue: 190, growSeconds: 45, maxHeight: 5 },
+  { id: 'cannabis', name: 'Cannabis', icon: '🌿', tier: 4, unlockCost: 5000, seedCost: 250, sellValue: 600, growSeconds: 60, maxHeight: 5 },
 ]
 
 /** Cuántas semillas de cada tier puede tener el jugador, según el tier desbloqueado. */

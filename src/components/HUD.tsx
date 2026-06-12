@@ -6,14 +6,13 @@ import { isNearBarn } from '../game/physics'
 
 export function HUD() {
   const state = useGameStore((s) => s.state)
-  const toggleShop = useGameStore((s) => s.toggleShop)
-  const toggleExpand = useGameStore((s) => s.toggleExpand)
   const deposit = useGameStore((s) => s.deposit)
   const message = useGameStore((s) => s.message)
   const save = useGameStore((s) => s.save)
 
   const capacity = getCapacity(state)
   const nearBarn = isNearBarn(state)
+  const inParcela = state.currentMap === 0
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' }}>
@@ -26,20 +25,22 @@ export function HUD() {
 
         <MoneyCounter value={state.money} />
 
-        <SeedWidget />
+        <DayWidget />
+
+        {inParcela && <SeedWidget />}
 
         <div style={{ flex: 1 }} />
 
-        <LoadBar value={state.mower.load} max={capacity} />
+        {inParcela && <LoadBar value={state.mower.load} max={capacity} />}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'auto' }}>
-          <button onClick={toggleShop} style={btnStyle}>TIENDA</button>
-          <button onClick={toggleExpand} style={btnStyle}>EXPANDIR</button>
-          <button onClick={deposit} style={{
-            ...btnStyle,
-            background: nearBarn && state.mower.load > 0 ? '#4CAF50' : '#555',
-            animation: nearBarn && state.mower.load > 0 ? 'pulse 1s infinite' : 'none',
-          }}>DEPOSITAR</button>
+          {inParcela && (
+            <button onClick={deposit} style={{
+              ...btnStyle,
+              background: nearBarn && state.mower.load > 0 ? '#4CAF50' : '#555',
+              animation: nearBarn && state.mower.load > 0 ? 'pulse 1s infinite' : 'none',
+            }}>DEPOSITAR</button>
+          )}
           <button onClick={save} style={{ ...btnStyle, background: '#333', fontSize: 10 }}>SAVE</button>
         </div>
       </div>
@@ -69,6 +70,42 @@ export function HUD() {
           {message}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Indicador de Día + barra de tiempo restante (se refresca solo, sin re-render del HUD). */
+function DayWidget() {
+  const day = useGameStore((s) => s.state.day)
+  const [frac, setFrac] = useState(1)
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const s = useGameStore.getState()
+      setFrac(Math.max(0, Math.min(1, s.dayClock / (s.dayLength || 1))))
+    }, 250)
+    return () => clearInterval(id)
+  }, [])
+
+  const low = frac < 0.2
+  return (
+    <div style={{
+      pointerEvents: 'none', background: 'rgba(0,0,0,0.55)', borderRadius: 10,
+      padding: '6px 12px', display: 'flex', flexDirection: 'column', gap: 4, minWidth: 92,
+    }}>
+      <div style={{
+        fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: 1,
+        display: 'flex', justifyContent: 'space-between', gap: 8,
+      }}>
+        <span>📅 Día {day}</span>
+      </div>
+      <div style={{ height: 5, background: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{
+          width: `${frac * 100}%`, height: '100%',
+          background: low ? '#d8533f' : '#5CAB3E',
+          transition: 'width 0.25s linear',
+        }} />
+      </div>
     </div>
   )
 }

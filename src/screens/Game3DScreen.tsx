@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { WebGLRenderer } from '../renderers/webgl/GameRenderer'
 import { assetLoader } from '../renderers/webgl/AssetLoader'
+import { audioManager } from '../audio/AudioManager'
 import { HUD } from '../components/HUD'
-import { ShopOverlay } from '../components/ShopOverlay'
-import { ExpandOverlay } from '../components/ExpandOverlay'
 import { SeedShopOverlay } from '../components/SeedShopOverlay'
 import { ToolShopOverlay } from '../components/ToolShopOverlay'
+import { CorralModal } from '../components/CorralModal'
+import { BusStopModal } from '../components/BusStopModal'
+import { DeathNewspaperOverlay } from '../components/DeathNewspaperOverlay'
+import { SettingsModal } from '../components/SettingsModal'
+import { BillCollectorOverlay } from '../components/BillCollectorOverlay'
+import { GameOverScreen } from '../components/GameOverScreen'
 
 interface Game3DScreenProps {
   onBack: () => void
@@ -47,6 +52,8 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const setInput = useGameStore((s) => s.setInput)
   const isPlaying = useGameStore((s) => s.isPlaying)
+  const currentMap = useGameStore((s) => s.state.currentMap)
+  const showSettings = useGameStore((s) => s.showSettings)
   const [showHint, setShowHint] = useState(true)
   const [assetsReady, setAssetsReady] = useState(false)
 
@@ -83,6 +90,9 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
     const handleResize = () => renderer.resize(window.innerWidth, window.innerHeight)
     window.addEventListener('resize', handleResize)
 
+    // Música de fondo mientras se juega.
+    audioManager.startMusic()
+
     let lastTime = performance.now()
     let frameId: number
 
@@ -92,6 +102,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
 
       const storeState = useGameStore.getState()
       if (storeState.isPlaying) {
+        storeState.tickClock(dt)
         renderer.render(storeState.state, storeState.input, dt)
       }
 
@@ -107,12 +118,14 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
 
     return () => {
       useGameStore.getState().save()
+      audioManager.stopMusic()
       cancelAnimationFrame(frameId)
       clearInterval(autosaveId)
       window.removeEventListener('resize', handleResize)
       renderer.destroy()
     }
-  }, [assetsReady])
+    // Reconstruir el mundo al viajar de mapa (parcela ⇄ pueblo).
+  }, [assetsReady, currentMap])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -133,9 +146,10 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       }
 
       if (e.key === 'Escape') {
+        e.preventDefault()
+        // ESC abre/cierra el menú de ajustes (ya no sale al menú; eso es el botón MENU).
         useGameStore.getState().save()
-        useGameStore.getState().setPlaying(false)
-        onBack()
+        useGameStore.getState().toggleSettings()
       }
     }
 
@@ -169,6 +183,7 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       }}
     >
       <canvas
+        key={currentMap}
         ref={canvasRef}
         style={{ display: 'block', width: '100%', height: '100%' }}
       />
@@ -235,10 +250,14 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
       {isPlaying && (
         <>
           <HUD />
-          <ShopOverlay />
-          <ExpandOverlay />
           <SeedShopOverlay />
           <ToolShopOverlay />
+          <CorralModal />
+          <BusStopModal />
+          <BillCollectorOverlay />
+          <DeathNewspaperOverlay />
+          {showSettings && <SettingsModal onClose={() => useGameStore.getState().setShowSettings(false)} />}
+          <GameOverScreen onExit={onBack} />
         </>
       )}
 

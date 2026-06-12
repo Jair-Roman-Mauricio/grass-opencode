@@ -25,8 +25,13 @@ export function createDefaultGrass(): number[][] {
 export function createDefaultState(): GameState {
   return {
     money: 0,
+    savings: 0,
     upgrades: { speed: 0, capacity: 0, income: 0 },
     areas: [true, false, false, false, false, false, false, false, false],
+    // Progresión por mapas: empiezas en La Parcela (mapa 0), Día 1.
+    day: 1,
+    currentMap: 0,
+    mapsOwned: [true, false],
     mower: createDefaultMower(),
     grass: createDefaultGrass(),
     stats: {
@@ -35,8 +40,10 @@ export function createDefaultState(): GameState {
       totalDeposits: 0,
       playTime: 0,
     },
-    // Sistema de cultivo: parcela vacía, solo pasto disponible (gratis), tijera.
+    // Sistema de cultivo: parcela vacía, solo pasto disponible, tijera.
     seeds: { pasto: 0, trebol: 0, trigo: 0, girasol: 0, cannabis: 0 },
+    // Las primeras 5 semillas de pasto son gratis; después cuestan.
+    freeStarterSeeds: 5,
     seedTierUnlocked: 0,
     selectedSeed: 'pasto',
     tool: 0,

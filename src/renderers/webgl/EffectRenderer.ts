@@ -56,8 +56,13 @@ export class EffectRenderer {
     onPling()
   }
 
-  updateBillStack(mowerX: number, mowerZ: number, mowerDir: number, mowerLoad: number, maxCap: number): void {
-    const target = Math.min(50, Math.max(1, Math.ceil((mowerLoad / maxCap) * 50)))
+  // El dinero llena el corral por CAPAS: primero se completa toda la rejilla del
+  // suelo (capa 0), luego la capa 1 encima, etc. (cx,cz) es el centro del corral.
+  updateBillStack(cx: number, cz: number, _dir: number, mowerLoad: number, maxCap: number): void {
+    const COLS = 6, ROWS = 4
+    const PER_LAYER = COLS * ROWS            // 24 billetes por capa
+    const MAX = PER_LAYER * 2                // hasta 2 capas representadas
+    const target = Math.min(MAX, Math.max(0, Math.ceil((mowerLoad / Math.max(1, maxCap)) * MAX)))
 
     while (this.billStack.length > target && this.billStack.length > 0) {
       const b = this.billStack.pop()!
@@ -66,34 +71,29 @@ export class EffectRenderer {
         disposeMaterial(b.mesh.material)
       }
     }
-
     while (this.billStack.length < target) {
       const tex = getBillTexture()
-      const mat = new THREE.MeshStandardMaterial({
-        map: tex,
-        roughness: 0.5,
-        metalness: 0.1,
-        side: THREE.DoubleSide,
-      })
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.08, 0.35), mat)
+      const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.1 })
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.085, 0.4), mat)
       mesh.castShadow = true
-      const i = this.billStack.length
-      mesh.userData.offsetY = i * 0.08
       this.scene.add(mesh)
-      this.billStack.push({ mesh, offsetY: i * 0.08 })
+      this.billStack.push({ mesh, offsetY: 0 })
     }
 
-    const bx = -Math.sin(mowerDir) * 0.4
-    const bz = -Math.cos(mowerDir) * 0.4
+    const cellW = 0.34, cellD = 0.42, layerH = 0.09
     for (let i = 0; i < this.billStack.length; i++) {
       const b = this.billStack[i]
-      b.mesh.position.x = mowerX + bx + (Math.random() - 0.5) * 0.03
-      b.mesh.position.z = mowerZ + bz + (Math.random() - 0.5) * 0.03
-      b.mesh.position.y = 0.1 + i * 0.08
-      b.mesh.rotation.y = mowerDir + Math.PI
-      b.mesh.rotation.x = 0
-      b.mesh.rotation.z = 0
+      const layer = Math.floor(i / PER_LAYER)
+      const cell = i % PER_LAYER
+      const col = cell % COLS
+      const row = Math.floor(cell / COLS)
+      const y = 0.1 + layer * layerH
+      b.mesh.position.x = cx + (col - (COLS - 1) / 2) * cellW
+      b.mesh.position.z = cz + (row - (ROWS - 1) / 2) * cellD
+      b.mesh.position.y = y
+      b.mesh.rotation.set(0, 0, 0)
       b.mesh.scale.set(1, 1, 1)
+      b.offsetY = layer * layerH
     }
   }
 

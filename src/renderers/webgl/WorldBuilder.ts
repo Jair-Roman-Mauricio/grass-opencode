@@ -9,6 +9,8 @@ export class WorldBuilder {
   // Posiciones (x=col, z=row) de los vendedores de semillas y herramientas.
   seedVendorPos: THREE.Vector3 = new THREE.Vector3(6.5, 0, 5.5)
   toolVendorPos: THREE.Vector3 = new THREE.Vector3(23.5, 0, 5.5)
+  busStopPos: THREE.Vector3 = new THREE.Vector3(15.5, 0, 27.5)
+  corralPos: THREE.Vector3 = new THREE.Vector3(11, 0, 17.5)
   // Centro y tamaño de la tienda (para colisiones AABB)
   barnCenter: THREE.Vector3 = new THREE.Vector3(15.5, 0, 15.5)
   barnSize: THREE.Vector3 = new THREE.Vector3(2.8, 1.54, 2.52)
@@ -38,6 +40,28 @@ export class WorldBuilder {
     }
   }
 
+  /** AABB centrado en (cx,cz) con semiejes hx,hz. */
+  private aabbAt(cx: number, cz: number, hx: number, hz: number) {
+    return { minX: cx - hx, maxX: cx + hx, minZ: cz - hz, maxZ: cz + hz }
+  }
+
+  /**
+   * Todos los objetos sólidos del mundo (granero, puestos de vendedores y parada
+   * de autobús). El jugador y la cortadora no pueden atravesarlos.
+   */
+  getSolidAABBs(): Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> {
+    return [
+      this.getBarnAABB(),
+      // Puestos: el mostrador queda hacia z+0.45.
+      this.aabbAt(this.seedVendorPos.x, this.seedVendorPos.z + 0.45, 0.95, 0.55),
+      this.aabbAt(this.toolVendorPos.x, this.toolVendorPos.z + 0.45, 0.95, 0.55),
+      // Parada de autobús (marquesina + banca).
+      this.aabbAt(this.busStopPos.x, this.busStopPos.z + 0.1, 1.15, 0.6),
+      // Corral (mejora de capacidad).
+      this.aabbAt(this.corralPos.x, this.corralPos.z, 1.3, 1.0),
+    ]
+  }
+
   build(grassMap?: Record<string, number>): void {
     this.createTileGround(grassMap)
     this.createGridBorders()
@@ -45,8 +69,130 @@ export class WorldBuilder {
     // Puestos de vendedores (semillas y herramientas).
     this.createStall(this.seedVendorPos.z, this.seedVendorPos.x, 0x2e7d32, 'SEMILLAS')
     this.createStall(this.toolVendorPos.z, this.toolVendorPos.x, 0x1565c0, 'HERRAMIENTAS')
+    this.createBusStop(this.busStopPos.z, this.busStopPos.x)
+    this.createCorral(this.corralPos.z, this.corralPos.x)
     this.createFencePosts()
     this.createTrees()
+  }
+
+  /** Parada de autobús: marquesina + banca + cartel "BUS" (punto de viaje entre mapas). */
+  private createBusStop(r: number, c: number): void {
+    const g = new THREE.Group()
+    const x = c
+    const z = r
+    const mat = (color: number, rough = 0.7) =>
+      new THREE.MeshStandardMaterial({ color, roughness: rough })
+    const box = (w: number, h: number, d: number, m: THREE.Material) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      return mesh
+    }
+
+    // Postes traseros
+    for (const sx of [-0.85, 0.85]) {
+      const pole = box(0.1, 1.9, 0.1, mat(0x394049))
+      pole.position.set(x + sx, 0.95, z + 0.35)
+      g.add(pole)
+    }
+    // Panel trasero
+    const back = box(1.9, 1.1, 0.08, mat(0x4a90c2, 0.5))
+    back.position.set(x, 1.2, z + 0.4)
+    g.add(back)
+    // Techo (marquesina)
+    const roof = box(2.2, 0.1, 1.1, mat(0xd84f3f, 0.5))
+    roof.position.set(x, 1.95, z)
+    g.add(roof)
+    // Banca
+    const seat = box(1.8, 0.1, 0.4, mat(0x6d4c2a))
+    seat.position.set(x, 0.5, z - 0.05)
+    g.add(seat)
+    for (const sx of [-0.8, 0.8]) {
+      const leg = box(0.1, 0.5, 0.35, mat(0x4e342e))
+      leg.position.set(x + sx, 0.25, z - 0.05)
+      g.add(leg)
+    }
+
+    // Poste del cartel "BUS"
+    const signPole = box(0.08, 2.4, 0.08, mat(0x9aa6ae))
+    signPole.position.set(x + 1.3, 1.2, z)
+    g.add(signPole)
+    const signC = document.createElement('canvas')
+    signC.width = 128
+    signC.height = 128
+    const ctx = signC.getContext('2d')!
+    ctx.fillStyle = '#1565c0'
+    ctx.fillRect(0, 0, 128, 128)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 60px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('🚌', 64, 40)
+    ctx.font = 'bold 34px sans-serif'
+    ctx.fillText('BUS', 64, 92)
+    const tex = new THREE.CanvasTexture(signC)
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.7, 0.7),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 })
+    )
+    sign.position.set(x + 1.3, 2.5, z)
+    g.add(sign)
+    const sign2 = sign.clone()
+    sign2.rotation.y = Math.PI
+    g.add(sign2)
+
+    this.scene.add(g)
+  }
+
+  /** Corral (valla + cartel) para mejorar la capacidad de carga. */
+  private createCorral(r: number, c: number): void {
+    const g = new THREE.Group()
+    const x = c, z = r
+    const mat = (color: number, rough = 0.85) =>
+      new THREE.MeshStandardMaterial({ color, roughness: rough })
+    const box = (w: number, h: number, d: number, m: THREE.Material) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      return mesh
+    }
+    const wood = 0x6d4c2a
+    // Valla rectangular (postes + travesaños) dejando un frente abierto.
+    const hw = 1.2, hd = 0.9
+    const corners: Array<[number, number]> = [
+      [-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd],
+    ]
+    for (const [px, pz] of corners) {
+      const post = box(0.18, 1.1, 0.18, mat(wood))
+      post.position.set(x + px, 0.55, z + pz)
+      g.add(post)
+    }
+    // Travesaños (lados y fondo; el frente queda abierto para "entrar")
+    const railZ = box(0.1, 0.16, hd * 2, mat(0x8a6a3a))
+    for (const side of [-hw, hw]) {
+      const r1 = railZ.clone(); r1.position.set(x + side, 0.45, z); g.add(r1)
+      const r2 = railZ.clone(); r2.position.set(x + side, 0.8, z); g.add(r2)
+    }
+    const railX = box(hw * 2, 0.16, 0.1, mat(0x8a6a3a))
+    const back1 = railX.clone(); back1.position.set(x, 0.45, z - hd); g.add(back1)
+    const back2 = railX.clone(); back2.position.set(x, 0.8, z - hd); g.add(back2)
+    // Suelo de paja
+    const floor = box(hw * 2, 0.05, hd * 2, mat(0xc9a24a, 1))
+    floor.position.set(x, 0.05, z)
+    g.add(floor)
+    // Cartel "CORRAL"
+    const cv = document.createElement('canvas')
+    cv.width = 256; cv.height = 64
+    const ctx = cv.getContext('2d')!
+    ctx.fillStyle = '#3a2a1a'; ctx.fillRect(0, 0, 256, 64)
+    ctx.fillStyle = '#ffd700'; ctx.font = 'bold 30px sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('CORRAL', 128, 34)
+    const tex = new THREE.CanvasTexture(cv)
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }))
+    sign.position.set(x, 1.3, z - hd)
+    g.add(sign)
+    this.scene.add(g)
   }
 
   /** Puesto de mercado pequeño (mostrador + toldo a rayas + cartel). */

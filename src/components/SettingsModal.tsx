@@ -8,6 +8,8 @@ interface SettingsModalProps {
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const [volume, setVolume] = useState(audioManager.getVolume() * 100)
   const [muted, setMuted] = useState(!audioManager.isEnabled())
+  const [musicOn, setMusicOn] = useState(audioManager.isMusicEnabled())
+  const [sfxOn, setSfxOn] = useState(audioManager.isSfxEnabled())
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -32,6 +34,18 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setMuted(next)
     audioManager.setEnabled(!next)
     if (!next) audioManager.setVolume(volume / 100)
+  }
+
+  const toggleMusic = () => {
+    const next = !musicOn
+    setMusicOn(next)
+    audioManager.setMusicEnabled(next)
+  }
+
+  const toggleSfx = () => {
+    const next = !sfxOn
+    setSfxOn(next)
+    audioManager.setSfxEnabled(next)
   }
 
   return (
@@ -70,6 +84,28 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               style={muted ? toggleOffStyle : toggleOnStyle}
             >
               {muted ? 'OFF' : 'ON'}
+            </button>
+          </div>
+
+          <div style={rowStyle}>
+            <label style={labelStyle}>Música</label>
+            <button
+              onClick={toggleMusic}
+              disabled={muted}
+              style={musicOn && !muted ? toggleOnStyle : toggleOffStyle}
+            >
+              {musicOn ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          <div style={rowStyle}>
+            <label style={labelStyle}>Efectos</label>
+            <button
+              onClick={toggleSfx}
+              disabled={muted}
+              style={sfxOn && !muted ? toggleOnStyle : toggleOffStyle}
+            >
+              {sfxOn ? 'ON' : 'OFF'}
             </button>
           </div>
         </section>

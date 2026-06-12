@@ -86,12 +86,19 @@ export function seedBuyCap(state: GameState, tier: number): number {
   return SEED_CAP_PER_TIER * (state.seedTierUnlocked - tier + 1)
 }
 
+/** Coste real de la próxima semilla: las primeras 5 de pasto (tier 0) son gratis. */
+export function seedEffectiveCost(state: GameState, id: SeedId): number {
+  const def = getSeedDef(id)
+  if (def.tier === 0 && state.freeStarterSeeds > 0) return 0
+  return def.seedCost
+}
+
 /** ¿Puede comprar una semilla más de este tipo (desbloqueada y por debajo del tope)? */
 export function canBuySeed(state: GameState, id: SeedId): boolean {
   const def = getSeedDef(id)
   if (!isSeedUnlocked(state, id)) return false
   if (state.seeds[id] >= seedBuyCap(state, def.tier)) return false
-  return state.money >= def.seedCost
+  return state.money >= seedEffectiveCost(state, id)
 }
 
 /** Hay semilla seleccionada disponible para plantar. */
@@ -99,9 +106,9 @@ export function canPlant(state: GameState): boolean {
   return (state.seeds[state.selectedSeed] ?? 0) > 0
 }
 
-/** Valor monetario de una unidad de altura cortada de una parcela. */
-export function plotCutValue(plot: PlotData, units: number): number {
-  return units * getSeedDef(plot.type).valueMult
+/** Valor monetario de una planta madura cosechada (a income×1). */
+export function plotCutValue(plot: PlotData): number {
+  return getSeedDef(plot.type).sellValue
 }
 
 export function getIncomeMultiplier(state: GameState): number {

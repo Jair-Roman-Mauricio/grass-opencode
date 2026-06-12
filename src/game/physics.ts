@@ -1,5 +1,5 @@
 import type { GameState, InputState, MowerState } from './types'
-import { GRID_SIZE, DEPOSIT_RADIUS, BAR_CENTER_X, BAR_CENTER_Y } from './constants'
+import { GRID_SIZE, BUYER_X, BUYER_Z, BUYER_RADIUS } from './constants'
 import { getSpeed, getCutWidth, getBladePower, getCapacity } from './economy'
 import { isInBounds } from './gameState'
 
@@ -73,7 +73,8 @@ function cutGrass(
 }
 
 export function isNearBarn(state: GameState): boolean {
-  const dx = state.mower.x - BAR_CENTER_X
-  const dy = state.mower.y - BAR_CENTER_Y
-  return Math.sqrt(dx * dx + dy * dy) <= DEPOSIT_RADIUS
+  // "Cerca del granero" = junto al COMPRADOR (no al edificio).
+  const dx = state.mower.x - BUYER_X
+  const dy = state.mower.y - BUYER_Z
+  return Math.sqrt(dx * dx + dy * dy) <= BUYER_RADIUS
 }

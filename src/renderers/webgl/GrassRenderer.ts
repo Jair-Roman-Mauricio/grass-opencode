@@ -20,8 +20,9 @@ function buildGeometry(seedId: SeedId): THREE.BufferGeometry {
   const positions: number[] = []
   const colors: number[] = []
 
-  const pushLeaf = (
-    bx: number, bz: number,
+  // Quad cónico genérico con base a cualquier altura `by` (permite tallo + cabeza).
+  const pushQuad = (
+    bx: number, by: number, bz: number,
     tx: number, ty: number, tz: number,
     baseW: number,
     tipW: number,
@@ -29,8 +30,9 @@ function buildGeometry(seedId: SeedId): THREE.BufferGeometry {
     colTip: RGB,
   ) => {
     const dx = tx - bx
+    const dy = ty - by
     const dz = tz - bz
-    const len = Math.sqrt(dx * dx + ty * ty + dz * dz) || 1
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1
     const px = -dz / len
     const pz = dx / len
 
@@ -43,11 +45,21 @@ function buildGeometry(seedId: SeedId): THREE.BufferGeometry {
     const ctx = tx - px * tipW
     const ctz = tz - pz * tipW
 
-    positions.push(ax, 0, az, ctsx, ty, ctsz, cax, 0, caz)
+    positions.push(ax, by, az, ctsx, ty, ctsz, cax, by, caz)
     colors.push(...colBase, ...colTip, ...colBase)
-    positions.push(cax, 0, caz, ctsx, ty, ctsz, ctx, ty, ctz)
+    positions.push(cax, by, caz, ctsx, ty, ctsz, ctx, ty, ctz)
     colors.push(...colBase, ...colTip, ...colTip)
   }
+
+  // Quad anclado al suelo (compatibilidad con pasto/cannabis).
+  const pushLeaf = (
+    bx: number, bz: number,
+    tx: number, ty: number, tz: number,
+    baseW: number,
+    tipW: number,
+    colBase: RGB,
+    colTip: RGB,
+  ) => pushQuad(bx, 0, bz, tx, ty, tz, baseW, tipW, colBase, colTip)
 
   const pushFanLeaf = (leafY: number, leafAngle: number, fLen: number, tilt: number, mid: RGB, light: RGB) => {
     const fingers = 7
@@ -80,69 +92,75 @@ function buildGeometry(seedId: SeedId): THREE.BufferGeometry {
       break
     }
     case 'trebol': {
-      // Trébol: tallos cortos rematados por hojitas anchas redondeadas.
-      const stem: RGB = [0.18, 0.42, 0.16]
-      const leafB: RGB = [0.22, 0.55, 0.20]
-      const leafT: RGB = [0.45, 0.78, 0.32]
+      // Trébol: tallos cortos rematados por foliolos anchos redondeados a su altura.
+      const stem: RGB = [0.20, 0.45, 0.16]
+      const leafB: RGB = [0.20, 0.58, 0.18]
+      const leafT: RGB = [0.48, 0.84, 0.36]
       const stems = 4
       for (let i = 0; i < stems; i++) {
         const a = (i / stems) * Math.PI * 2 + 0.4
-        const sx = Math.cos(a) * 0.07
-        const sz = Math.sin(a) * 0.07
-        const h = 0.22 + Math.random() * 0.06
-        pushLeaf(0, 0, sx, h, sz, 0.012, 0.01, stem, stem)
-        // tres foliolos anchos en la punta
+        const sx = Math.cos(a) * 0.05
+        const sz = Math.sin(a) * 0.05
+        const h = 0.20 + Math.random() * 0.05
+        // tallo fino vertical
+        pushLeaf(sx, sz, sx, h, sz, 0.012, 0.012, stem, stem)
+        // 3 foliolos anchos en la PUNTA del tallo (base a altura h)
         for (let k = 0; k < 3; k++) {
-          const la = a + (k - 1) * 0.5
-          pushLeaf(sx, sz, sx + Math.cos(la) * 0.06, h + 0.05, sz + Math.sin(la) * 0.06, 0.05, 0.0, leafB, leafT)
+          const la = a + (k - 1) * 1.0
+          const lx = sx + Math.cos(la) * 0.05
+          const lz = sz + Math.sin(la) * 0.05
+          pushQuad(sx, h, sz, lx, h + 0.06, lz, 0.055, 0.05, leafB, leafT)
         }
       }
       break
     }
     case 'trigo': {
-      // Trigo: tallos altos rectos con espiga dorada arriba.
-      const stem: RGB = [0.55, 0.62, 0.22]
-      const grainB: RGB = [0.78, 0.66, 0.20]
-      const grainT: RGB = [0.95, 0.84, 0.36]
-      const stalks = 5
+      // Trigo: pocas cañas altas y rectas con espiga dorada densa arriba.
+      const stem: RGB = [0.52, 0.60, 0.24]
+      const grainB: RGB = [0.80, 0.66, 0.18]
+      const grainT: RGB = [0.98, 0.86, 0.40]
+      const stalks = 3
       for (let i = 0; i < stalks; i++) {
         const a = (i / stalks) * Math.PI * 2
-        const ox = Math.cos(a) * 0.06
-        const oz = Math.sin(a) * 0.06
-        const h = 0.55 + Math.random() * 0.08
-        pushLeaf(ox, oz, ox, h, oz, 0.012, 0.008, stem, grainB)
-        // granos de la espiga
-        for (let g = 0; g < 5; g++) {
-          const gy = h * (0.6 + g * 0.08)
-          pushLeaf(ox, oz, ox + 0.03, gy, oz, 0.018, 0.004, grainB, grainT)
-          pushLeaf(ox, oz, ox - 0.03, gy + 0.02, oz, 0.018, 0.004, grainB, grainT)
+        const ox = Math.cos(a) * 0.05
+        const oz = Math.sin(a) * 0.05
+        const h = 0.6 + Math.random() * 0.08
+        // caña recta
+        pushLeaf(ox, oz, ox, h, oz, 0.014, 0.01, stem, grainB)
+        // espiga: granos apilados desde la punta hacia arriba (base a altura)
+        for (let gI = 0; gI < 6; gI++) {
+          const gy = h + gI * 0.05
+          pushQuad(ox, gy, oz, ox, gy + 0.06, oz, 0.03, 0.0, grainB, grainT)
+          pushQuad(ox, gy, oz, ox + 0.035, gy + 0.04, oz, 0.012, 0.0, grainB, grainT)
+          pushQuad(ox, gy, oz, ox - 0.035, gy + 0.04, oz, 0.012, 0.0, grainB, grainT)
         }
       }
       break
     }
     case 'girasol': {
-      // Girasol: tallo grueso + corola amarilla con centro marrón.
+      // Girasol: tallo grueso, dos hojas grandes y flor con pétalos amarillos + centro marrón.
       const stem: RGB = [0.20, 0.45, 0.16]
-      const leaf: RGB = [0.26, 0.55, 0.20]
-      const petalB: RGB = [0.95, 0.74, 0.15]
-      const petalT: RGB = [1.0, 0.86, 0.30]
-      const center: RGB = [0.36, 0.22, 0.08]
-      const H = 0.6
-      pushLeaf(0, 0, 0, H, 0, 0.03, 0.02, stem, stem)
-      // un par de hojas grandes a media altura
+      const leaf: RGB = [0.24, 0.55, 0.20]
+      const petalB: RGB = [0.92, 0.70, 0.12]
+      const petalT: RGB = [1.0, 0.88, 0.30]
+      const center: RGB = [0.34, 0.20, 0.07]
+      const H = 0.62
+      // tallo grueso
+      pushLeaf(0, 0, 0, H, 0, 0.03, 0.025, stem, stem)
+      // dos hojas grandes a media altura (base a media altura)
       for (const side of [-1, 1]) {
-        pushLeaf(0, 0, side * 0.12, H * 0.5, 0, 0.06, 0.0, leaf, leaf)
+        pushQuad(0, H * 0.45, 0, side * 0.15, H * 0.52, 0, 0.02, 0.07, leaf, leaf)
       }
-      // corola: pétalos radiales en la copa
-      const petals = 10
+      // corola: pétalos radiando desde la copa (base a altura H)
+      const petals = 12
       for (let i = 0; i < petals; i++) {
         const a = (i / petals) * Math.PI * 2
-        pushLeaf(0, 0, Math.cos(a) * 0.13, H + 0.02, Math.sin(a) * 0.13, 0.03, 0.0, petalB, petalT)
+        pushQuad(0, H, 0, Math.cos(a) * 0.15, H + 0.03, Math.sin(a) * 0.15, 0.03, 0.0, petalB, petalT)
       }
-      // centro
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2
-        pushLeaf(0, 0, Math.cos(a) * 0.04, H + 0.04, Math.sin(a) * 0.04, 0.025, 0.01, center, center)
+      // disco central marrón
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2
+        pushQuad(0, H, 0, Math.cos(a) * 0.05, H + 0.05, Math.sin(a) * 0.05, 0.045, 0.02, center, center)
       }
       break
     }
@@ -364,7 +382,7 @@ export class GrassRenderer3D {
     if (!slot) return
     const tm = this.meshes[slot.type]
     if (!tm) return
-    const ratio = Math.max(0.15, Math.min(1, growth))
+    const ratio = Math.max(0.06, Math.min(1, growth))
     for (let idx = slot.start; idx < slot.start + slot.count; idx++) {
       const info = tm.bladeInfos[idx]
       if (!info) continue

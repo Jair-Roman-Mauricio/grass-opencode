@@ -1,313 +1,386 @@
+import * as Tone from 'tone'
+import { MusicManager } from './MusicManager'
+
+// Capa de audio 100% sintetizada con Tone.js. No carga archivos: cada efecto se
+// genera con synths y se dispara con variación de tono/timing para que no canse.
+// Buses:  synths -> sfxBus  ┐
+//         música  -> musicBus┤-> masterGain -> destino
+// setVolume escala masterGain; setEnabled silencia todo.
+
 export class AudioManager {
-  private ctx: AudioContext | null = null
-  private masterGain: GainNode | null = null
-  private engineNodes: {
-    osc: OscillatorNode
-    gain: GainNode
-    lfo: OscillatorNode
-    lfoGain: GainNode
-    sub: OscillatorNode
-    subGain: GainNode
-  } | null = null
+  private started = false
   private enabled = true
   private _initialized = false
   private _volume = 1.0
 
+  private masterGain: Tone.Gain | null = null
+  private sfxBus: Tone.Gain | null = null
+  private musicBus: Tone.Gain | null = null
+
+  // Synths reutilizables
+  private pluck!: Tone.PluckSynth      // monedas / clicks
+  private bell!: Tone.FMSynth          // chimes / recompensa
+  private membrane!: Tone.MembraneSynth // golpes graves (siembra, montar, depósito)
+  private noise!: Tone.NoiseSynth      // pasos / corte de pasto
+  private blip!: Tone.Synth            // UI / seleccionar
+  private poly!: Tone.PolySynth        // acordes (compra, error, fanfarrias)
+
+  // Motor de la cortadora (drone en bucle)
+  private engineOsc: Tone.Oscillator | null = null
+  private engineFilter: Tone.Filter | null = null
+  private engineGain: Tone.Gain | null = null
+  private engineLfo: Tone.LFO | null = null
+
+  // Drone ambiental de la cinemática de introducción
+  private cineOsc: Tone.Oscillator | null = null
+  private cineSub: Tone.Oscillator | null = null
+  private cineGain: Tone.Gain | null = null
+  private cineFilter: Tone.Filter | null = null
+  private cineLfo: Tone.LFO | null = null
+
+  private music: MusicManager | null = null
+  private musicEnabled = true
+  private sfxEnabled = true
+  private onVisibility: (() => void) | null = null
+
   init(): void {
     if (this._initialized) return
     this._initialized = true
-    // AudioContext se crea perezosamente en initCtx() al primer gesto del usuario
+    // El AudioContext de Tone arranca en resume() (primer gesto del usuario).
   }
 
-  private initCtx(): void {
-    if (this.ctx) return
-    try {
-      this.ctx = new AudioContext()
-      this.masterGain = this.ctx.createGain()
-      this.masterGain.gain.value = 1.0
-      this.masterGain.connect(this.ctx.destination)
-    } catch {
-      this.enabled = false
-    }
-  }
-
+  /** Arranca Tone y construye el grafo de audio (idempotente). */
   resume(): void {
-    this.initCtx()
-    if (this.ctx?.state === 'suspended') {
-      this.ctx.resume()
+    if (this.started) {
+      if (Tone.getContext().state === 'suspended') void Tone.start()
+      return
+    }
+    this.started = true
+    void Tone.start()
+    this.buildGraph()
+  }
+
+  private buildGraph(): void {
+    this.masterGain = new Tone.Gain(this._volume).toDestination()
+    this.sfxBus = new Tone.Gain(0.9).connect(this.masterGain)
+    this.musicBus = new Tone.Gain(0.5).connect(this.masterGain)
+
+    // Reverb suave compartido para campanas/acordes.
+    const reverb = new Tone.Reverb({ decay: 1.6, wet: 0.18 }).connect(this.sfxBus)
+
+    this.pluck = new Tone.PluckSynth({ attackNoise: 1, dampening: 4000, resonance: 0.9 })
+    this.pluck.connect(this.sfxBus)
+
+    this.bell = new Tone.FMSynth({
+      harmonicity: 3.01,
+      modulationIndex: 6,
+      envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.6 },
+      modulationEnvelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 },
+    })
+    this.bell.connect(reverb)
+
+    this.membrane = new Tone.MembraneSynth({
+      pitchDecay: 0.04,
+      octaves: 4,
+      envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.2 },
+    })
+    this.membrane.connect(this.sfxBus)
+
+    this.noise = new Tone.NoiseSynth({
+      noise: { type: 'brown' },
+      envelope: { attack: 0.005, decay: 0.08, sustain: 0, release: 0.02 },
+    })
+    const noiseFilter = new Tone.Filter({ type: 'bandpass', frequency: 500, Q: 1.2 }).connect(this.sfxBus)
+    this.noise.connect(noiseFilter)
+
+    this.blip = new Tone.Synth({
+      oscillator: { type: 'square' },
+      envelope: { attack: 0.001, decay: 0.06, sustain: 0, release: 0.04 },
+    })
+    this.blip.volume.value = -8
+    this.blip.connect(this.sfxBus)
+
+    this.poly = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'triangle' },
+      envelope: { attack: 0.005, decay: 0.2, sustain: 0.1, release: 0.3 },
+    })
+    this.poly.volume.value = -6
+    this.poly.connect(reverb)
+
+    this.music = new MusicManager(this.musicBus)
+    if (!this.enabled) {
+      this.masterGain.gain.value = 0
+    }
+
+    // En segundo plano el navegador estrangula el AudioContext y produce
+    // distorsión. Suspenderlo al ocultar la pestaña y reanudarlo al volver.
+    if (!this.onVisibility && typeof document !== 'undefined') {
+      this.onVisibility = () => {
+        const raw = Tone.getContext().rawContext as AudioContext
+        try {
+          if (document.hidden) raw.suspend?.()
+          else raw.resume?.()
+        } catch { /* ignorar */ }
+      }
+      document.addEventListener('visibilitychange', this.onVisibility)
     }
   }
 
-  private ensureResumed(): void {
-    if (this.ctx?.state === 'suspended') {
-      this.ctx.resume()
-    }
+  private get ready(): boolean {
+    return this.started && this.enabled && !!this.sfxBus
   }
 
-  startEngine(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled || this.engineNodes) return
-    this.ensureResumed()
-
-    const osc = this.ctx.createOscillator()
-    osc.type = 'sawtooth'
-    osc.frequency.value = 80
-
-    const gain = this.ctx.createGain()
-    gain.gain.value = 0.12
-
-    const lfo = this.ctx.createOscillator()
-    lfo.frequency.value = 5
-    const lfoGain = this.ctx.createGain()
-    lfoGain.gain.value = 10
-    lfo.connect(lfoGain)
-    lfoGain.connect(osc.frequency)
-    lfo.start()
-
-    const sub = this.ctx.createOscillator()
-    sub.type = 'sine'
-    sub.frequency.value = 55
-    const subGain = this.ctx.createGain()
-    subGain.gain.value = 0.06
-
-    osc.connect(gain)
-    gain.connect(this.masterGain)
-    sub.connect(subGain)
-    subGain.connect(this.masterGain)
-    osc.start()
-    sub.start()
-
-    this.engineNodes = { osc, gain, lfo, lfoGain, sub, subGain }
+  // Tiempo de scheduling estrictamente creciente: Tone exige que cada evento sea
+  // posterior al anterior; con StrictMode (doble montaje) o disparos rápidos dos
+  // eventos pueden caer en el mismo instante. Avanzamos un epsilon para evitarlo.
+  private lastT = 0
+  private t(offset = 0): number {
+    const now = Tone.now() + offset
+    this.lastT = Math.max(now, this.lastT + 0.01)
+    return this.lastT
   }
 
-  stopEngine(): void {
-    if (!this.engineNodes) return
-    try {
-      this.engineNodes.osc.stop()
-      this.engineNodes.osc.disconnect()
-      this.engineNodes.lfo.stop()
-      this.engineNodes.lfo.disconnect()
-      this.engineNodes.sub.stop()
-      this.engineNodes.sub.disconnect()
-    } catch {}
-    this.engineNodes = null
+  /** Dispara un synth de forma segura: si Tone lanza por timing, se ignora (no crashea). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private tone(synth: { triggerAttackRelease: (...a: any[]) => unknown }, ...args: any[]): void {
+    try { synth.triggerAttackRelease(...args) } catch { /* colisión de scheduling: omitir */ }
   }
 
-  playLoadChime(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled) return
-    this.ensureResumed()
-    const t = this.ctx.currentTime
-
-    const filter = this.ctx.createBiquadFilter()
-    filter.type = 'lowpass'
-    filter.frequency.value = 3000
-    filter.Q.value = 0.7
-    filter.connect(this.masterGain)
-
-    const osc1 = this.ctx.createOscillator()
-    osc1.type = 'triangle'
-    osc1.frequency.setValueAtTime(660, t)
-    osc1.frequency.exponentialRampToValueAtTime(990, t + 0.05)
-
-    const osc2 = this.ctx.createOscillator()
-    osc2.type = 'sine'
-    osc2.frequency.setValueAtTime(1320, t + 0.005)
-    osc2.frequency.exponentialRampToValueAtTime(1760, t + 0.055)
-
-    const gain = this.ctx.createGain()
-    gain.gain.setValueAtTime(0.0001, t)
-    gain.gain.exponentialRampToValueAtTime(0.85, t + 0.008)
-    gain.gain.exponentialRampToValueAtTime(0.005, t + 0.15)
-
-    osc1.connect(gain)
-    osc2.connect(gain)
-    gain.connect(filter)
-
-    osc1.start(t)
-    osc1.stop(t + 0.1)
-    osc2.start(t + 0.005)
-    osc2.stop(t + 0.1)
-  }
-
-  playLoadFullChime(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled) return
-    this.ensureResumed()
-    const t = this.ctx.currentTime
-
-    const filter = this.ctx.createBiquadFilter()
-    filter.type = 'lowpass'
-    filter.frequency.value = 4000
-    filter.Q.value = 0.5
-    filter.connect(this.masterGain)
-
-    const gain = this.ctx.createGain()
-    gain.gain.setValueAtTime(0.0001, t)
-    gain.gain.exponentialRampToValueAtTime(0.85, t + 0.01)
-    gain.gain.exponentialRampToValueAtTime(0.005, t + 0.35)
-    gain.connect(filter)
-
-    const freqs = [880, 1108, 1318]
-    const oscs: OscillatorNode[] = []
-    for (const f of freqs) {
-      const o = this.ctx.createOscillator()
-      o.type = 'triangle'
-      o.frequency.setValueAtTime(f, t)
-      o.frequency.exponentialRampToValueAtTime(f * 1.02, t + 0.15)
-      o.connect(gain)
-      o.start(t)
-      o.stop(t + 0.3)
-      oscs.push(o)
-    }
-  }
+  // --- Eventos de juego (interfaz pública estable) ---
 
   playStep(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled) return
-    this.ensureResumed()
-    const t = this.ctx.currentTime
-
-    const noiseBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.05, this.ctx.sampleRate)
-    const data = noiseBuf.getChannelData(0)
-    for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length)
-    }
-    const noise = this.ctx.createBufferSource()
-    noise.buffer = noiseBuf
-
-    const bp = this.ctx.createBiquadFilter()
-    bp.type = 'bandpass'
-    bp.frequency.value = 400
-    bp.Q.value = 2
-
-    const noiseGain = this.ctx.createGain()
-    noiseGain.gain.setValueAtTime(0.65, t)
-    noiseGain.gain.exponentialRampToValueAtTime(0.005, t + 0.06)
-
-    noise.connect(bp)
-    bp.connect(noiseGain)
-    noiseGain.connect(this.masterGain)
-    noise.start(t)
-    noise.stop(t + 0.05)
-
-    const pitchVar = 1 + (Math.random() * 0.08 - 0.04)
-    const osc = this.ctx.createOscillator()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(110 * pitchVar, t)
-    osc.frequency.exponentialRampToValueAtTime(70 * pitchVar, t + 0.05)
-
-    const oscGain = this.ctx.createGain()
-    oscGain.gain.setValueAtTime(0.35, t)
-    oscGain.gain.exponentialRampToValueAtTime(0.005, t + 0.10)
-
-    osc.connect(oscGain)
-    oscGain.connect(this.masterGain)
-    osc.start(t)
-    osc.stop(t + 0.09)
+    if (!this.ready) return
+    this.tone(this.noise, 0.05, this.t(), 0.5 + Math.random() * 0.2)
   }
 
-  playCash(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled) return
-    this.ensureResumed()
-
-    const osc1 = this.ctx.createOscillator()
-    osc1.type = 'triangle'
-    osc1.frequency.setValueAtTime(800, this.ctx.currentTime)
-    osc1.frequency.exponentialRampToValueAtTime(1600, this.ctx.currentTime + 0.08)
-
-    const gain1 = this.ctx.createGain()
-    gain1.gain.setValueAtTime(1.0, this.ctx.currentTime)
-    gain1.gain.exponentialRampToValueAtTime(0.005, this.ctx.currentTime + 0.15)
-
-    osc1.connect(gain1)
-    gain1.connect(this.masterGain)
-    osc1.start()
-    osc1.stop(this.ctx.currentTime + 0.15)
-
-    const osc2 = this.ctx.createOscillator()
-    osc2.type = 'sine'
-    osc2.frequency.setValueAtTime(1200, this.ctx.currentTime + 0.06)
-    osc2.frequency.exponentialRampToValueAtTime(1800, this.ctx.currentTime + 0.15)
-
-    const gain2 = this.ctx.createGain()
-    gain2.gain.setValueAtTime(0.85, this.ctx.currentTime + 0.06)
-    gain2.gain.exponentialRampToValueAtTime(0.005, this.ctx.currentTime + 0.25)
-
-    osc2.connect(gain2)
-    gain2.connect(this.masterGain)
-    osc2.start(this.ctx.currentTime + 0.06)
-    osc2.stop(this.ctx.currentTime + 0.2)
+  /** Siembra: golpe terroso suave + crujido corto (estilo Minecraft). */
+  playPlant(): void {
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.membrane, `G${1 + (Math.random() < 0.5 ? 0 : 1)}`, '16n', t, 0.7)
+    this.tone(this.noise, 0.07, t, 0.6)
   }
 
-  playHit(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled) return
-    this.ensureResumed()
-
-    const osc1 = this.ctx.createOscillator()
-    osc1.type = 'sawtooth'
-    osc1.frequency.setValueAtTime(200, this.ctx.currentTime)
-    osc1.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.2)
-
-    const gain1 = this.ctx.createGain()
-    gain1.gain.setValueAtTime(1.0, this.ctx.currentTime)
-    gain1.gain.exponentialRampToValueAtTime(0.005, this.ctx.currentTime + 0.3)
-
-    osc1.connect(gain1)
-    gain1.connect(this.masterGain)
-    osc1.start()
-    osc1.stop(this.ctx.currentTime + 0.25)
-
-    const osc2 = this.ctx.createOscillator()
-    osc2.type = 'square'
-    osc2.frequency.setValueAtTime(100, this.ctx.currentTime + 0.05)
-
-    const gain2 = this.ctx.createGain()
-    gain2.gain.setValueAtTime(0.65, this.ctx.currentTime + 0.05)
-    gain2.gain.exponentialRampToValueAtTime(0.005, this.ctx.currentTime + 0.2)
-
-    osc2.connect(gain2)
-    gain2.connect(this.masterGain)
-    osc2.start(this.ctx.currentTime + 0.05)
-    osc2.stop(this.ctx.currentTime + 0.15)
+  /** Corte de pasto: swish de ruido con tono variable. */
+  playCut(): void {
+    if (!this.ready) return
+    this.tone(this.noise, 0.06, this.t(), 0.35 + Math.random() * 0.2)
   }
 
   playMount(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled) return
-    this.ensureResumed()
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.blip, 'C4', '16n', t, 0.7)
+    this.tone(this.blip, 'G4', '16n', t + 0.07, 0.7)
+  }
 
-    const osc = this.ctx.createOscillator()
-    osc.type = 'square'
-    osc.frequency.setValueAtTime(200, this.ctx.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(600, this.ctx.currentTime + 0.12)
+  playLoadChime(): void {
+    if (!this.ready) return
+    const note = ['C6', 'E6', 'G6'][Math.floor(Math.random() * 3)]
+    this.tone(this.pluck, note, '16n', this.t())
+  }
 
-    const gain = this.ctx.createGain()
-    gain.gain.setValueAtTime(0.85, this.ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.005, this.ctx.currentTime + 0.25)
+  playLoadFullChime(): void {
+    if (!this.ready) return
+    const t = this.t()
+    ;['C6', 'E6', 'G6', 'C7'].forEach((n, i) => this.tone(this.bell, n, '8n', t + i * 0.08))
+  }
 
-    osc.connect(gain)
-    gain.connect(this.masterGain)
-    osc.start()
-    osc.stop(this.ctx.currentTime + 0.2)
+  /** Venta / depósito: "ka-ching" satisfactorio (campana ascendente + golpe). */
+  playSell(): void {
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.membrane, 'C2', '16n', t, 0.6)
+    this.tone(this.bell, 'C6', '16n', t + 0.02)
+    this.tone(this.bell, 'G6', '8n', t + 0.12)
+    this.tone(this.pluck, 'C7', '16n', t + 0.12)
+  }
+
+  playCash(): void {
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.pluck, 'E6', '32n', t)
+    this.tone(this.pluck, 'A6', '32n', t + 0.06)
   }
 
   playClick(): void {
-    if (!this.ctx || !this.masterGain || !this.enabled) return
-    this.ensureResumed()
-
-    const osc = this.ctx.createOscillator()
-    osc.type = 'sine'
-    osc.frequency.value = 1000
-
-    const gain = this.ctx.createGain()
-    gain.gain.setValueAtTime(0.65, this.ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.005, this.ctx.currentTime + 0.06)
-
-    osc.connect(gain)
-    gain.connect(this.masterGain)
-    osc.start()
-    osc.stop(this.ctx.currentTime + 0.04)
+    if (!this.ready) return
+    this.tone(this.blip, 'A4', '32n', this.t(), 0.5)
   }
+
+  playSelect(): void {
+    if (!this.ready) return
+    this.tone(this.blip, 'E5', '32n', this.t(), 0.6)
+  }
+
+  /** Acción denegada: dos notas descendentes apagadas. */
+  playError(): void {
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.poly, 'A3', '16n', t, 0.5)
+    this.tone(this.poly, 'Eb3', '8n', t + 0.1, 0.5)
+  }
+
+  playOpen(): void {
+    if (!this.ready) return
+    const t = this.t()
+    ;['C5', 'E5', 'G5'].forEach((n, i) => this.tone(this.blip, n, '32n', t + i * 0.05, 0.5))
+  }
+
+  playClose(): void {
+    if (!this.ready) return
+    const t = this.t()
+    ;['G5', 'E5', 'C5'].forEach((n, i) => this.tone(this.blip, n, '32n', t + i * 0.05, 0.5))
+  }
+
+  /** Compra exitosa: acorde mayor alegre. */
+  playPurchase(): void {
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.poly, ['C5', 'E5', 'G5'], '8n', t, 0.6)
+    this.tone(this.pluck, 'C6', '16n', t + 0.02)
+  }
+
+  /** Desbloqueo: fanfarria ascendente más notable. */
+  playUnlock(): void {
+    if (!this.ready) return
+    const t = this.t()
+    ;['C5', 'E5', 'G5', 'C6'].forEach((n, i) => this.tone(this.bell, n, '8n', t + i * 0.09))
+    this.tone(this.poly, ['C5', 'G5'], '4n', t + 0.36, 0.5)
+  }
+
+  // --- Motor de la cortadora (drone en bucle) ---
+
+  startEngine(): void {
+    if (!this.ready || this.engineOsc) return
+    this.engineGain = new Tone.Gain(0.06).connect(this.sfxBus!)
+    this.engineFilter = new Tone.Filter({ type: 'lowpass', frequency: 300, Q: 2 }).connect(this.engineGain)
+    this.engineOsc = new Tone.Oscillator({ type: 'sawtooth', frequency: 70 }).connect(this.engineFilter)
+    this.engineLfo = new Tone.LFO({ frequency: 6, min: 60, max: 95 }).start()
+    this.engineLfo.connect(this.engineOsc.frequency)
+    this.engineOsc.start()
+  }
+
+  stopEngine(): void {
+    try {
+      this.engineOsc?.stop()
+      this.engineOsc?.dispose()
+      this.engineLfo?.dispose()
+      this.engineFilter?.dispose()
+      this.engineGain?.dispose()
+    } catch {}
+    this.engineOsc = null
+    this.engineLfo = null
+    this.engineFilter = null
+    this.engineGain = null
+  }
+
+  // --- Cinemática de introducción ---
+
+  /** Drone ambiental MUY suave durante toda la intro (no debe aturdir ni tapar la voz). */
+  startCinematic(): void {
+    if (!this.started) this.resume()
+    if (!this.ready || this.cineOsc) return
+    this.cineGain = new Tone.Gain(0).connect(this.sfxBus!)
+    this.cineGain.gain.rampTo(0.035, 2.5)
+    // Filtro cerrado: solo deja pasar el grave, sin el zumbido de la sierra.
+    this.cineFilter = new Tone.Filter({ type: 'lowpass', frequency: 360, Q: 0.6 }).connect(this.cineGain)
+    this.cineOsc = new Tone.Oscillator({ type: 'triangle', frequency: 55 }).connect(this.cineFilter)
+    this.cineSub = new Tone.Oscillator({ type: 'sine', frequency: 36.7 }).connect(this.cineFilter)
+    this.cineSub.volume.value = -10
+    this.cineLfo = new Tone.LFO({ frequency: 0.08, min: 280, max: 440 }).start()
+    this.cineLfo.connect(this.cineFilter.frequency)
+    this.cineOsc.start()
+    this.cineSub.start()
+  }
+
+  /** Aparición de un panel: golpe muy suave (no debe pegar). */
+  playCinePanel(): void {
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.membrane, 'C2', '16n', t, 0.35)
+    this.tone(this.noise, 0.1, t, 0.18)
+  }
+
+  /** Tick corto del typewriter (el throttle lo gestiona el componente). */
+  playCineType(): void {
+    if (!this.ready) return
+    this.tone(this.blip, 'C6', '64n', this.t(), 0.18)
+  }
+
+  /** Acorde dramático breve y discreto para los remates cómicos. */
+  playCineStinger(): void {
+    if (!this.ready) return
+    const t = this.t()
+    this.tone(this.poly, ['C4', 'Eb4', 'G4'], '8n', t, 0.22)
+    this.tone(this.bell, 'Eb5', '16n', t + 0.04, 0.3)
+  }
+
+  /** Para el drone y resuelve con un acorde ascendente al entrar al juego. */
+  endCinematic(): void {
+    if (this.cineGain) this.cineGain.gain.rampTo(0, 0.8)
+    const osc = this.cineOsc, sub = this.cineSub, lfo = this.cineLfo, filt = this.cineFilter, g = this.cineGain
+    this.cineOsc = this.cineSub = this.cineLfo = null
+    this.cineFilter = null
+    this.cineGain = null
+    setTimeout(() => {
+      try {
+        osc?.stop(); osc?.dispose()
+        sub?.stop(); sub?.dispose()
+        lfo?.dispose(); filt?.dispose(); g?.dispose()
+      } catch {}
+    }, 1000)
+    if (this.ready) {
+      const t = this.t()
+      ;['C5', 'E5', 'G5', 'C6'].forEach((n, i) => this.tone(this.bell, n, '8n', t + i * 0.08))
+      this.tone(this.poly, ['C4', 'G4'], '2n', t + 0.32, 0.5)
+    }
+  }
+
+  // --- Música de fondo ---
+
+  startMusic(): void {
+    if (!this.started) this.resume()
+    if (!this.enabled || !this.musicEnabled) return
+    this.music?.start()
+  }
+
+  stopMusic(): void {
+    this.music?.stop()
+  }
+
+  setMusicEnabled(on: boolean): void {
+    this.musicEnabled = on
+    if (on) this.music?.start()
+    else this.music?.stop()
+  }
+
+  isMusicEnabled(): boolean {
+    return this.musicEnabled
+  }
+
+  // Silenciar SOLO los efectos (el bus de SFX), sin tocar la música.
+  setSfxEnabled(on: boolean): void {
+    this.sfxEnabled = on
+    if (this.sfxBus) this.sfxBus.gain.rampTo(on ? 0.9 : 0, 0.1)
+    if (!on) this.stopEngine()
+  }
+
+  isSfxEnabled(): boolean {
+    return this.sfxEnabled
+  }
+
+  // --- Control global ---
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled
-    if (!enabled) this.stopEngine()
+    if (this.masterGain) this.masterGain.gain.rampTo(enabled ? this._volume : 0, 0.1)
+    if (!enabled) {
+      this.stopEngine()
+      this.music?.stop()
+    } else if (this.musicEnabled) {
+      this.music?.start()
+    }
   }
 
   isEnabled(): boolean {
@@ -317,9 +390,7 @@ export class AudioManager {
   setVolume(value: number): void {
     const v = Math.max(0, Math.min(1, value))
     this._volume = v
-    if (this.masterGain && this.ctx) {
-      this.masterGain.gain.value = v
-    }
+    if (this.masterGain && this.enabled) this.masterGain.gain.rampTo(v, 0.05)
   }
 
   getVolume(): number {
@@ -328,10 +399,17 @@ export class AudioManager {
 
   destroy(): void {
     this.stopEngine()
-    if (this.ctx) {
-      this.ctx.close()
-      this.ctx = null
+    this.endCinematic()
+    if (this.onVisibility && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibility)
+      this.onVisibility = null
     }
+    this.music?.dispose()
+    try {
+      this.masterGain?.dispose()
+      this.sfxBus?.dispose()
+      this.musicBus?.dispose()
+    } catch {}
   }
 }
 

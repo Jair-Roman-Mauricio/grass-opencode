@@ -26,8 +26,8 @@ export interface SeedDef {
   unlockCost: number
   /** Coste por cada semilla individual comprada. */
   seedCost: number
-  /** Multiplicador de valor al cosechar (dinero por unidad de altura). */
-  valueMult: number
+  /** Dinero que da una planta madura al cosecharse (a income×1). Debe superar a seedCost. */
+  sellValue: number
   /** Segundos para crecer de 0 a altura máxima. */
   growSeconds: number
   /** Altura máxima (1-5). */
@@ -66,6 +66,33 @@ export interface AreaDef {
   grassBonus: number
 }
 
+// --- Mapas (progresión por boletos de autobús) ---
+export interface MapDef {
+  id: number
+  name: string
+  /** Coste del boleto para desbloquear el acceso a este mapa. */
+  ticketCost: number
+  /** Aún no jugable (se construye en una fase posterior). */
+  comingSoon?: boolean
+  desc: string
+}
+
+// --- Cobrador de cuentas (deudas diarias) ---
+export interface Debt {
+  name: string
+  amount: number
+  paid: boolean
+  /** Familiar que sufre si esta deuda queda impaga ('' = la deuda del abuelo, sin familiar). */
+  member: string
+}
+
+export type FamilyHealth = 'bien' | 'mal' | 'muymal' | 'muerte'
+
+export interface FamilyMember {
+  name: string
+  status: FamilyHealth
+}
+
 export interface MowerState {
   x: number
   y: number
@@ -85,8 +112,19 @@ export interface GameStats {
 
 export interface GameState {
   money: number
+  /** Ahorros: colchón opcional que cubre las cuentas el día que no cumplas. */
+  savings: number
   upgrades: Record<UpgradeId, number>
   areas: boolean[]
+
+  // --- Progresión por mapas ---
+  /** Día actual (empieza en 1). El cobrador aparece al terminar cada día. */
+  day: number
+  /** Mapa en el que estás (0 = La Parcela). */
+  currentMap: number
+  /** Acceso desbloqueado a cada mapa (boleto comprado). */
+  mapsOwned: boolean[]
+
   mower: MowerState
   grass: number[][]
   stats: GameStats
@@ -100,6 +138,8 @@ export interface GameState {
   // --- Sistema de cultivo ---
   /** Inventario de semillas compradas sin plantar, por tipo. */
   seeds: Record<SeedId, number>
+  /** Semillas gratis restantes de la primera semilla (pasto). Tras agotarse, cuesta. */
+  freeStarterSeeds: number
   /** Tier de semilla más alto desbloqueado (0 = solo pasto). */
   seedTierUnlocked: number
   /** Semilla activa para plantar. */

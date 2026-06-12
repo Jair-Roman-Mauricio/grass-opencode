@@ -1,6 +1,6 @@
 import { useGameStore } from '../store/gameStore'
 import { SEEDS } from '../game/constants'
-import { isSeedUnlocked, seedBuyCap, canBuySeed } from '../game/economy'
+import { isSeedUnlocked, seedBuyCap, canBuySeed, seedEffectiveCost } from '../game/economy'
 import { ShopModal, type ShopItem } from './ShopModal'
 
 export function SeedShopOverlay() {
@@ -36,12 +36,15 @@ export function SeedShopOverlay() {
       }
     }
 
+    const freeNote = seed.tier === 0 && state.freeStarterSeeds > 0
+      ? `  ·  GRATIS (${state.freeStarterSeeds})`
+      : ''
     return {
       id: seed.id,
       icon: seed.icon,
       name: seed.name,
-      sub: `Tienes ${inv}/${cap}  ·  x${seed.valueMult} $`,
-      price: seed.seedCost,
+      sub: `Tienes ${inv}/${cap}  ·  Vende $${seed.sellValue}${freeNote}`,
+      price: seedEffectiveCost(state, seed.id),
       buyLabel: inv >= cap ? 'MÁX' : 'BUY',
       buyDisabled: !canBuySeed(state, seed.id),
       onBuy: () => buySeed(seed.id),

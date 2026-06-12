@@ -4,7 +4,7 @@ import { audioManager } from '../audio/AudioManager'
 import { SettingsModal } from './SettingsModal'
 
 interface MainMenuProps {
-  onStart: () => void
+  onStart: (withIntro: boolean) => void
 }
 
 const API_BASE = '/api'
@@ -67,7 +67,7 @@ export function MainMenu({ onStart }: MainMenuProps) {
       console.warn('No se pudo crear save remoto:', err)
     }
     newGame()
-    onStart()
+    onStart(true) // partida nueva → mostrar cinemática de introducción
   }
 
   const handleContinue = async () => {
@@ -80,7 +80,7 @@ export function MainMenu({ onStart }: MainMenuProps) {
       console.warn('No se pudo cargar save remoto:', err)
     }
     load()
-    onStart()
+    onStart(false) // continuar → entrar directo, sin cinemática
   }
 
   const hasSave = saves.length > 0

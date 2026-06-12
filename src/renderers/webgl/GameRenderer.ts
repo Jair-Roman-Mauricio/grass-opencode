@@ -1,21 +1,20 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import type { GameState, InputState, PlotData, SeedId } from '../../game/types'
+import type { GameState, InputState, PlotData } from '../../game/types'
 import type { GameRenderer } from '../types'
 import { WorldBuilder } from './WorldBuilder'
 import { GrassRenderer3D } from './GrassRenderer'
 import { MowerRenderer3D } from './MowerRenderer'
 import { PlayerRenderer } from './PlayerRenderer'
 import { NPCRenderer } from './NPCRenderer'
-import { EnemyRenderer } from './EnemyRenderer'
+import { TownBuilder } from './TownBuilder'
 import { EffectRenderer } from './EffectRenderer'
 import {
-  AREAS,
-  DEPOSIT_RADIUS,
-  BAR_CENTER_X,
-  BAR_CENTER_Y,
+  BUYER_X,
+  BUYER_Z,
+  BUYER_RADIUS,
 } from '../../game/constants'
-import { getUpgradeValue, getCapacity, getSeedDef, getCutWidth, getCurrentTool } from '../../game/economy'
+import { getUpgradeValue, getCapacity, getSeedDef, getCutWidth, getCurrentTool, getSpeed } from '../../game/economy'
 import { saveGame } from '../../game/save'
 import { audioManager } from '../../audio/AudioManager'
 import { useGameStore } from '../../store/gameStore'
@@ -34,14 +33,18 @@ export class WebGLRenderer implements GameRenderer {
   private camera: THREE.PerspectiveCamera | null = null
 
   private worldBuilder!: WorldBuilder
+  private townBuilder!: TownBuilder
   private grassRenderer!: GrassRenderer3D
   private mowerRenderer!: MowerRenderer3D
   private playerRenderer!: PlayerRenderer
   private npcRenderer!: NPCRenderer
   private seedNpc!: NPCRenderer
   private toolNpc!: NPCRenderer
-  private enemyRenderer!: EnemyRenderer
   private effectRenderer!: EffectRenderer
+
+  /** Mapa que se está renderizando (0 = parcela, 1 = pueblo). */
+  private map = 0
+  private nearLab = false
 
   private ticks = 0
   private plots: Record<string, PlotData> = {}
@@ -49,7 +52,6 @@ export class WebGLRenderer implements GameRenderer {
   private lastFPressed = false
   private controlsHint: HTMLElement | null = null
   private mountHint: HTMLElement | null = null
-  private invincible = 0
   private lastChimeTime = 0
   private wasLoadFull = false
   private cinematicCamera: {
@@ -105,16 +107,13 @@ export class WebGLRenderer implements GameRenderer {
     this.scene.add(sun)
 
     this.worldBuilder = new WorldBuilder(this.scene)
+    this.townBuilder = new TownBuilder(this.scene)
     this.grassRenderer = new GrassRenderer3D(this.scene)
     this.mowerRenderer = new MowerRenderer3D(this.scene)
     this.playerRenderer = new PlayerRenderer(this.scene)
     this.npcRenderer = new NPCRenderer(this.scene)
     this.seedNpc = new NPCRenderer(this.scene)
     this.toolNpc = new NPCRenderer(this.scene)
-    this.enemyRenderer = new EnemyRenderer(
-      this.scene,
-      () => this.worldBuilder.getBarnAABB()
-    )
     this.effectRenderer = new EffectRenderer(this.scene)
 
     this.playerRenderer.onStep = () => {
@@ -122,11 +121,6 @@ export class WebGLRenderer implements GameRenderer {
         audioManager.playStep()
       }
     }
-
-    // Suscribirse al callback de compra de áreas
-    useGameStore.getState().setOnAreaPurchased((areaId: number) => {
-      this.handleAreaPurchased(areaId)
-    })
 
     this.buildWorld()
     this.camera!.position.set(24, 8, 24)
@@ -140,10 +134,13 @@ export class WebGLRenderer implements GameRenderer {
   render(state: GameState, input: InputState, dt: number): void {
     if (!this.scene || !this.camera || !this.renderer) return
     this.state = state
-
     this.ticks++
 
-    this.invincible = Math.max(0, this.invincible - dt)
+    if (this.map === 1) {
+      this.renderTown(dt, input)
+      return
+    }
+
     this.effectRenderer.hitFlash = Math.max(0, this.effectRenderer.hitFlash - dt * 2)
     this.effectRenderer.shake = Math.max(0, this.effectRenderer.shake - dt * 3)
 
@@ -154,17 +151,6 @@ export class WebGLRenderer implements GameRenderer {
     this.npcRenderer.update(dt, this.ticks)
     this.seedNpc.update(dt, this.ticks + 30)
     this.toolNpc.update(dt, this.ticks + 60)
-    // Solo el carrito cuenta como objetivo cuando vas montado; a pie el objetivo
-    // es el jugador (el carrito oculto no debe recibir golpes fantasma).
-    const riding = this.playerRenderer.person.state === 'ride'
-    this.enemyRenderer.update(
-      dt,
-      this.playerRenderer.person.x,
-      this.playerRenderer.person.z,
-      riding ? state.mower.x : -999,
-      riding ? state.mower.y : -999,
-      (lost) => this.onEnemyHit(lost)
-    )
     this.effectRenderer.updateFlyingBills(
       state.mower.x,
       state.mower.y,
@@ -196,6 +182,72 @@ export class WebGLRenderer implements GameRenderer {
     this.lastFPressed = input.interact2
   }
 
+  /** Loop mínimo del Pueblo: solo caminar + proximidad a laboratorio/parada. */
+  private renderTown(dt: number, input: InputState): void {
+    this.updateTownPlayer(dt, input)
+    this.playerRenderer.update(dt)
+    this.playerRenderer.updateHeldTool(dt)
+    this.updateTownProximity(input)
+    this.updateCamera()
+    this.renderer!.render(this.scene!, this.camera!)
+    this.lastEPressed = input.interact
+    this.lastFPressed = input.interact2
+  }
+
+  /** Movimiento a pie en el pueblo (sin plantar/montar/depositar). */
+  private updateTownPlayer(dt: number, input: InputState): void {
+    const p = this.playerRenderer.person
+    const mv = getSpeed(this.state) * 4.5 * dt
+    let dx = 0, dz = 0
+    if (input.left) dx -= 1
+    if (input.right) dx += 1
+    if (input.up) dz -= 1
+    if (input.down) dz += 1
+    if (dx !== 0 && dz !== 0) { dx *= Math.SQRT1_2; dz *= Math.SQRT1_2 }
+
+    let nx = Math.max(0.3, Math.min(ROWS - 0.3, p.x + dx * mv))
+    let nz = Math.max(0.3, Math.min(COLS - 0.3, p.z + dz * mv))
+    const halfR = 0.3
+    if (this.blockedAny(nx, nz, halfR)) {
+      if (this.blockedAny(nx, p.z, halfR)) nx = p.x
+      else if (this.blockedAny(p.x, nz, halfR)) nz = p.z
+      else { nx = p.x; nz = p.z }
+    }
+    p.x = nx; p.z = nz
+    if (dx !== 0 || dz !== 0) { p.dir = Math.atan2(dx, dz); p.moving = true }
+    else p.moving = false
+    if (p.group) p.group.position.set(p.x, 0, p.z)
+  }
+
+  /** Proximidad en el pueblo: parada de autobús (F) y laboratorio (hint). */
+  private updateTownProximity(input: InputState): void {
+    const p = this.playerRenderer.person
+    const bus = this.townBuilder.busStopPos
+    const lab = this.townBuilder.labPos
+    const dBus = Math.hypot(p.x - bus.x, p.z - bus.z)
+    const dLab = Math.hypot(p.x - lab.x, p.z - lab.z)
+    const nearBus = dBus < SHOP_RADIUS + 0.8
+    this.nearLab = dLab < SHOP_RADIUS + 1.2 && !nearBus
+
+    const store = useGameStore.getState()
+    store.setNearBusStop(nearBus)
+
+    if (this.mountHint) {
+      if (nearBus) {
+        this.mountHint.style.opacity = '1'
+        this.mountHint.innerHTML = 'Presiona <b>F</b> para tomar el autobús'
+      } else if (this.nearLab) {
+        this.mountHint.style.opacity = '1'
+        this.mountHint.innerHTML = '🔬 Laboratorio — próximamente'
+      } else {
+        this.mountHint.style.opacity = '0'
+      }
+    }
+
+    const fJust = input.interact2 && !this.lastFPressed
+    if (fJust && nearBus) store.toggleBusStop()
+  }
+
   /** Avanza el crecimiento de las parcelas plantadas y reescala su render. */
   private updatePlotsGrowth(dt: number): void {
     let changed = false
@@ -223,13 +275,27 @@ export class WebGLRenderer implements GameRenderer {
     const nearSeed = dSeed < SHOP_RADIUS
     const nearTool = dTool < SHOP_RADIUS && !nearSeed
 
+    // Parada de autobús (viaje entre mapas).
+    const busPos = this.worldBuilder.busStopPos
+    const dBus = Math.sqrt((p.x - busPos.x) ** 2 + (p.z - busPos.z) ** 2)
+    const nearBus = dBus < SHOP_RADIUS + 0.6 && !nearSeed && !nearTool
+
+    // Corral (mejora de capacidad).
+    const corralPos = this.worldBuilder.corralPos
+    const dCorral = Math.sqrt((p.x - corralPos.x) ** 2 + (p.z - corralPos.z) ** 2)
+    const nearCorral = dCorral < SHOP_RADIUS && !nearSeed && !nearTool && !nearBus
+
     const store = useGameStore.getState()
     store.setNearShops({ seed: nearSeed, tool: nearTool })
+    store.setNearBusStop(nearBus)
+    store.setNearCorral(nearCorral)
 
     const fJust = input.interact2 && !this.lastFPressed
     if (fJust) {
       if (nearSeed) store.toggleSeedShop()
       else if (nearTool) store.toggleToolShop()
+      else if (nearBus) store.toggleBusStop()
+      else if (nearCorral) store.toggleCorral()
     }
   }
 
@@ -245,7 +311,6 @@ export class WebGLRenderer implements GameRenderer {
 
   destroy(): void {
     this.effectRenderer.clearAll()
-    this.enemyRenderer.clearAll()
     this.grassRenderer.clearAll()
     this.renderer?.dispose()
     this.renderer = null
@@ -255,6 +320,17 @@ export class WebGLRenderer implements GameRenderer {
   }
 
   private buildWorld(): void {
+    const state = this.state
+    this.map = state.currentMap
+    if (this.map === 1) {
+      this.buildTown()
+      return
+    }
+    this.buildParcela()
+  }
+
+  /** Mundo de la parcela (mapa 0). */
+  private buildParcela(): void {
     const state = this.state
 
     // Hidratar parcelas plantadas desde el estado persistido (parcela vacía si no hay).
@@ -289,8 +365,24 @@ export class WebGLRenderer implements GameRenderer {
 
     const mowerGroup = this.mowerRenderer.group!
     mowerGroup.position.set(state.mower.x, 0, state.mower.y)
+  }
 
-    this.enemyRenderer.buildAll({})
+  /** Mundo de El Pueblo (mapa 1): calles, casas, laboratorio y parada. */
+  private buildTown(): void {
+    this.townBuilder.build()
+    // Solo el jugador a pie; sin césped, cortadora ni vendedores.
+    this.plots = {}
+    this.playerRenderer.build()
+    this.playerRenderer.setActiveTool('tijera', false)
+    const spawn = this.townBuilder.playerSpawn
+    const person = this.playerRenderer.person
+    person.x = spawn.x
+    person.z = spawn.z
+    person.state = 'walk'
+    if (person.group) person.group.position.set(spawn.x, 0, spawn.z)
+    // Cámara cerca del jugador para no entrar con un barrido largo.
+    this.camera!.position.set(spawn.x + 7, 8, spawn.z + 7)
+    this.camera!.lookAt(spawn.x, 0, spawn.z)
   }
 
   private persistTimer = 0
@@ -339,12 +431,12 @@ export class WebGLRenderer implements GameRenderer {
       nx = Math.max(0.3, Math.min(ROWS - 0.3, nx))
       nz = Math.max(0.3, Math.min(COLS - 0.3, nz))
 
-      // Bloquear contra la tienda (AABB eje a eje para permitir "deslizarse").
-      const aabb = this.worldBuilder.getBarnAABB()
+      // Bloquear contra objetos sólidos (tiendas, granero, parada): eje a eje
+      // para permitir "deslizarse" a lo largo de la pared.
       const halfR = 0.3 // radio aproximado del jugador
-      if (this.pointHitsAABB(nx, nz, halfR, aabb)) {
-        const tryX = this.pointHitsAABB(nx, p.z, halfR, aabb)
-        const tryZ = this.pointHitsAABB(p.x, nz, halfR, aabb)
+      if (this.blockedAny(nx, nz, halfR)) {
+        const tryX = this.blockedAny(nx, p.z, halfR)
+        const tryZ = this.blockedAny(p.x, nz, halfR)
         if (tryX) {
           nx = p.x
         } else if (tryZ) {
@@ -375,9 +467,9 @@ export class WebGLRenderer implements GameRenderer {
         this.mowGrass(Math.floor(p.z), Math.floor(p.x))
       }
 
-      // Depositar a pie al acercarse al granero.
-      const distBarn = Math.sqrt((p.z - BARN_R) ** 2 + (p.x - BARN_C) ** 2)
-      if (distBarn < DEPOSIT_RADIUS && useGameStore.getState().state.mower.load > 0) {
+      // Vender a pie SOLO al acercarse al comprador (no al edificio).
+      const distBuyer = Math.sqrt((p.x - BUYER_X) ** 2 + (p.z - BUYER_Z) ** 2)
+      if (distBuyer < BUYER_RADIUS && useGameStore.getState().state.mower.load > 0) {
         this.deposit()
       }
 
@@ -414,12 +506,11 @@ export class WebGLRenderer implements GameRenderer {
       nx = Math.max(0.3, Math.min(ROWS - 0.3, nx))
       nz = Math.max(0.3, Math.min(COLS - 0.3, nz))
 
-      // Bloquear cortadora contra la tienda (AABB deslizante).
-      const aabb = this.worldBuilder.getBarnAABB()
+      // Bloquear cortadora contra objetos sólidos (AABB deslizante).
       const halfR = 0.35 // la cortadora es un poco más grande
-      if (this.pointHitsAABB(nx, nz, halfR, aabb)) {
-        const tryX = this.pointHitsAABB(nx, state.mower.y, halfR, aabb)
-        const tryZ = this.pointHitsAABB(state.mower.x, nz, halfR, aabb)
+      if (this.blockedAny(nx, nz, halfR)) {
+        const tryX = this.blockedAny(nx, state.mower.y, halfR)
+        const tryZ = this.blockedAny(state.mower.x, nz, halfR)
         if (tryX) {
           nx = state.mower.x
         } else if (tryZ) {
@@ -475,9 +566,9 @@ export class WebGLRenderer implements GameRenderer {
       )
 
       const dist = Math.sqrt(
-        (state.mower.y - BARN_R) ** 2 + (state.mower.x - BARN_C) ** 2
+        (state.mower.x - BUYER_X) ** 2 + (state.mower.y - BUYER_Z) ** 2
       )
-      if (dist < DEPOSIT_RADIUS && state.mower.load > 0) {
+      if (dist < BUYER_RADIUS && state.mower.load > 0) {
         this.deposit()
       }
 
@@ -527,7 +618,7 @@ export class WebGLRenderer implements GameRenderer {
     useGameStore.setState((s) => ({
       state: { ...s.state, seeds: { ...s.state.seeds, [seed]: s.state.seeds[seed] - 1 } },
     }))
-    audioManager.playClick()
+    audioManager.playPlant()
   }
 
   private mowGrass(r: number, c: number): void {
@@ -558,7 +649,7 @@ export class WebGLRenderer implements GameRenderer {
         if (plot.growth < 1) continue
 
         const cut = def.maxHeight
-        const value = cut * def.valueMult
+        const value = def.sellValue
 
         delete this.plots[key]
         this.grassRenderer.removeTile(tr, tc)
@@ -602,6 +693,7 @@ export class WebGLRenderer implements GameRenderer {
       const now = performance.now()
       if (now - this.lastChimeTime > 80) {
         this.lastChimeTime = now
+        audioManager.playCut()
         audioManager.playLoadChime()
       }
 
@@ -646,79 +738,21 @@ export class WebGLRenderer implements GameRenderer {
     }))
 
     this.npcRenderer.dance = 2.5
-    audioManager.playCash()
+    audioManager.playSell()
     this.effectRenderer.showEarnPopup(earned)
-  }
-
-  private onEnemyHit(_lost: number): void {
-    if (this.invincible > 0) return
-
-    const state = this.state
-    const lost = state.mower.load
-
-    this.effectRenderer.scatterBills(state.mower.x, state.mower.y)
-
-    useGameStore.setState((s) => ({
-      state: {
-        ...s.state,
-        mower: { ...s.state.mower, load: 0, value: 0 },
-      },
-    }))
-
-    this.effectRenderer.hitFlash = 1
-    this.effectRenderer.shake = 1
-    this.invincible = 2
-    audioManager.playHit()
-
-    if (lost > 0) {
-      this.effectRenderer.showEarnPopup(-Math.max(1, Math.floor(lost * 0.5)))
-    }
   }
 
   private updateBillStack(): void {
     const state = this.state
     const maxCap = getCapacity(state)
+    // El dinero/carga se apila DENTRO del corral (no junto a la cortadora).
+    const corral = this.worldBuilder.corralPos
     this.effectRenderer.updateBillStack(
-      state.mower.x,
-      state.mower.y,
-      this.mowerRenderer.group?.rotation.y ?? 0,
+      corral.x,
+      corral.z,
+      0,
       state.mower.load,
       maxCap
-    )
-  }
-
-  private handleAreaPurchased(areaId: number): void {
-    const area = AREAS.find(a => a.id === areaId)
-    if (!area) return
-
-    // Regalo al comprar un área: pasto ya maduro listo para cosechar.
-    const areaTiles: Array<{ r: number; c: number; type: SeedId; growth: number }> = []
-    for (let r = area.rowStart; r < Math.min(area.rowEnd, ROWS); r++) {
-      for (let c = area.colStart; c < Math.min(area.colEnd, COLS); c++) {
-        if (r < 0 || c < 0) continue
-        const key = r + ',' + c
-        if (!this.plots[key]) {
-          const plot: PlotData = { type: 'pasto', growth: 1 }
-          this.plots[key] = plot
-          this.worldBuilder.updateGroundTile(r, c, true)
-          areaTiles.push({ r, c, type: 'pasto', growth: 1 })
-        }
-      }
-    }
-
-    if (areaTiles.length === 0) return
-
-    this.persistPlots()
-
-    const centerR = (area.rowStart + area.rowEnd) / 2
-    const centerC = (area.colStart + area.colEnd) / 2
-
-    this.grassRenderer.animateAreaExpansion(
-      areaTiles,
-      { x: centerC, z: centerR },
-      (target) => {
-        this.startCinematicCameraMove(target, 2.5)
-      }
     )
   }
 
@@ -813,6 +847,16 @@ export class WebGLRenderer implements GameRenderer {
       this.mountHint.innerHTML = 'Presiona <b>F</b> para comprar herramientas'
       return
     }
+    if (store.nearBusStop) {
+      this.mountHint.style.opacity = '1'
+      this.mountHint.innerHTML = 'Presiona <b>F</b> para tomar el autobús'
+      return
+    }
+    if (store.nearCorral) {
+      this.mountHint.style.opacity = '1'
+      this.mountHint.innerHTML = 'Presiona <b>F</b> para ampliar la capacidad'
+      return
+    }
 
     // 2) Cerca del carrito (si lo tienes) → E para subir
     const md = Math.sqrt((p.x - state.mower.x) ** 2 + (p.z - state.mower.y) ** 2)
@@ -849,5 +893,16 @@ export class WebGLRenderer implements GameRenderer {
     const dx = px - closestX
     const dz = pz - closestZ
     return dx * dx + dz * dz < radius * radius
+  }
+
+  /** ¿El punto (con radio) choca con algún objeto sólido del mapa actual? */
+  private blockedAny(px: number, pz: number, radius: number): boolean {
+    const solids = this.map === 1
+      ? this.townBuilder.getSolidAABBs()
+      : this.worldBuilder.getSolidAABBs()
+    for (const aabb of solids) {
+      if (this.pointHitsAABB(px, pz, radius, aabb)) return true
+    }
+    return false
   }
 }
