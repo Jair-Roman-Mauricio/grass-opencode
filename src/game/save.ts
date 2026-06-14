@@ -40,5 +40,9 @@ export function deleteSave(): void {
 }
 
 function migrateSave(data: SaveData): GameState {
-  return createDefaultState()
+  const base = { ...createDefaultState(), ...data.state }
+  return {
+    ...base,
+    inheritedDebtPaid: base.inheritedDebtPaid ?? 0,
+  }
 }

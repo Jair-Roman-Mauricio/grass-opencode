@@ -18,6 +18,7 @@ import {
 import { getUpgradeValue, getCapacity, getSeedDef, getCutWidth, getCurrentTool, getSpeed } from '../../game/economy'
 import { saveGame } from '../../game/save'
 import { audioManager } from '../../audio/AudioManager'
+import { voiceManager } from '../../audio/VoiceManager'
 import { useGameStore } from '../../store/gameStore'
 
 const SHOP_RADIUS = 2.4 // distancia para activar el modal de un vendedor
@@ -762,6 +763,9 @@ export class WebGLRenderer implements GameRenderer {
 
     this.npcRenderer.dance = 2.5
     audioManager.playSell()
+    voiceManager.playGrassBuyerLine((text) => {
+      useGameStore.getState().showMessage(text)
+    })
     this.effectRenderer.showEarnPopup(earned)
   }
 

@@ -1,6 +1,6 @@
 import type { UpgradeDef, AreaDef, SeedDef, ToolDef, MapDef } from './types'
 
-export const SAVE_VERSION = 5
+export const SAVE_VERSION = 6
 export const SAVE_KEY = 'stoneGrassSave'
 
 // --- Mapas (progresión por boletos de autobús) ---
@@ -10,23 +10,29 @@ export const MAPS: MapDef[] = [
 ]
 
 /** Duración del día base (ms). Al agotarse aparece el cobrador de cuentas. */
-export const DAY_LENGTH_MS = 180000 // 3 minutos
-/** El cobrador llega antes con cada nueva CALIDAD de semilla desbloqueada… */
-export const DAY_LENGTH_STEP_MS = 30000 // 30 s menos por calidad
+export const DAY_LENGTH_MS = 300000 // 5 minutos
+/** El cobrador llega un poco antes con cada nueva CALIDAD de semilla desbloqueada… */
+export const DAY_LENGTH_STEP_MS = 15000 // 15 s menos por calidad
 /** …hasta un mínimo (para que siga siendo jugable). */
-export const DAY_LENGTH_MIN_MS = 60000 // 1 minuto
+export const DAY_LENGTH_MIN_MS = 240000 // 4 minutos
 
 /**
  * Duración del día según la calidad de semilla más alta desbloqueada (`tier`):
- * arranca en 3 min (tier 0 = solo pasto) y se acorta 30 s por cada calidad nueva,
- * con un suelo de 1 min. No depende del número de día.
+ * arranca en 5 min (tier 0 = solo pasto) y se acorta 15 s por cada calidad nueva,
+ * con un suelo de 4 min. No depende del número de día.
  */
 export function getDayLength(tier: number): number {
   return Math.max(DAY_LENGTH_MIN_MS, DAY_LENGTH_MS - tier * DAY_LENGTH_STEP_MS)
 }
 
-/** Deudas mínimas que hay que pagar cada día para sobrevivir. */
-export const MIN_DEBTS_TO_PAY = 2
+/** Mínimo de dinero que debe quedar en mano al ahorrar (para seguir jugando). */
+export const MIN_WALLET_RESERVE = 5
+
+/** Cuentas familiares mínimas a pagar además de la deuda del abuelo. */
+export const MIN_FAMILY_DEBTS_TO_PAY = 1
+
+/** Deuda heredada del abuelo que hay que liquidar para desbloquear El Pueblo. */
+export const INHERITED_DEBT_TOTAL = 2500
 /** Tarifa para volver a un mapa anterior que NO sea el mapa 0 (gratis). */
 export const RETURN_FARE = 100
 

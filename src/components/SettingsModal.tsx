@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { audioManager } from '../audio/AudioManager'
+import { voiceManager } from '../audio/VoiceManager'
 
 /* ── Paleta inventario / Stardew ── */
 const WOOD_DARK = '#5d2c00'
@@ -20,6 +21,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [muted, setMuted] = useState(!audioManager.isEnabled())
   const [musicOn, setMusicOn] = useState(audioManager.isMusicEnabled())
   const [sfxOn, setSfxOn] = useState(audioManager.isSfxEnabled())
+  const [voiceOn, setVoiceOn] = useState(voiceManager.isEnabled())
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -56,6 +58,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const next = !sfxOn
     setSfxOn(next)
     audioManager.setSfxEnabled(next)
+  }
+
+  const toggleVoice = () => {
+    const next = !voiceOn
+    setVoiceOn(next)
+    voiceManager.setEnabled(next)
   }
 
   return (
@@ -118,6 +126,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               label="Efectos"
               on={sfxOn && !muted}
               onClick={toggleSfx}
+              disabled={muted}
+            />
+            <SettingToggle
+              label="Voces"
+              on={voiceOn && !muted}
+              onClick={toggleVoice}
               disabled={muted}
             />
           </section>

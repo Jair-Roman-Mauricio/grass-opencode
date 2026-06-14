@@ -1,5 +1,6 @@
 import type { GameState, MapDef } from './types'
 import { MAPS, RETURN_FARE } from './constants'
+import { isMapMainObjectiveComplete } from './missions'
 
 export function getMap(id: number): MapDef | undefined {
   return MAPS.find((m) => m.id === id)
@@ -28,4 +29,15 @@ export function canTravel(state: GameState, to: number): boolean {
   if (!map) return false
   if (map.comingSoon) return false
   return state.money >= travelCost(state, to)
+}
+
+/** Comprar boleto a un mapa nuevo: exige objetivo principal del mapa actual. */
+export function canBuyTicket(state: GameState, targetMapId: number): boolean {
+  const map = getMap(targetMapId)
+  if (!map || map.comingSoon) return false
+  if (isMapOwned(state, targetMapId)) return false
+  if (targetMapId > state.currentMap && !isMapMainObjectiveComplete(state, state.currentMap)) {
+    return false
+  }
+  return state.money >= map.ticketCost
 }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsLandscape, useIsMobile } from '../hooks/useIsMobile'
 import { useGameStore } from '../store/gameStore'
 import { getSeedDef, getCurrentTool } from '../game/economy'
 import { formatNum } from '../utils/utils'
@@ -54,9 +54,11 @@ export function InventoryOverlay() {
   const tool = getCurrentTool(state)
   const seedIds: SeedId[] = ['pasto', 'trebol', 'trigo', 'girasol', 'cannabis']
   const isMobile = useIsMobile()
-  const hotbarSlotCount = isMobile ? 6 : 12
-  const slotSize = isMobile ? 40 : 48
-  const iconSize = isMobile ? 26 : 32
+  const isLandscape = useIsLandscape()
+  const mobileGame = isMobile && isLandscape
+  const hotbarSlotCount = mobileGame ? 6 : isMobile ? 6 : 12
+  const slotSize = mobileGame ? 44 : isMobile ? 40 : 48
+  const iconSize = mobileGame ? 28 : isMobile ? 26 : 32
 
   // Detect scroll wheel to change active hotbar slot
   useEffect(() => {
@@ -99,11 +101,13 @@ export function InventoryOverlay() {
   return (
     <>
       {/* ── ON-SCREEN HOTBAR (Bottom Center) ── */}
-      <div style={{
+      <div
+        className={mobileGame ? 'mobile-hotbar-wrap' : undefined}
+        style={{
         position: 'absolute',
-        bottom: isMobile ? 'calc(8px + env(safe-area-inset-bottom, 0px))' : 12,
+        bottom: mobileGame ? 10 : isMobile ? 'calc(8px + env(safe-area-inset-bottom, 0px))' : 12,
         left: '50%',
-        transform: isMobile ? 'translateX(-50%) scale(0.9)' : 'translateX(-50%)',
+        transform: mobileGame ? 'translateX(-50%)' : isMobile ? 'translateX(-50%) scale(0.9)' : 'translateX(-50%)',
         transformOrigin: 'bottom center',
         display: 'flex',
         flexDirection: 'column',
@@ -111,7 +115,8 @@ export function InventoryOverlay() {
         gap: 4,
         pointerEvents: 'auto',
         zIndex: 10,
-        maxWidth: isMobile ? '96vw' : undefined,
+        width: mobileGame ? '100%' : undefined,
+        maxWidth: mobileGame ? '100%' : isMobile ? '96vw' : undefined,
       }}>
         {/* Hotbar Frame */}
         <div style={{
@@ -209,7 +214,7 @@ export function InventoryOverlay() {
         </div>
 
         {/* Selected Item Label */}
-        {activeItemName && (
+        {activeItemName && !mobileGame && (
           <div style={{
             background: 'rgba(0,0,0,0.75)',
             color: '#fff',

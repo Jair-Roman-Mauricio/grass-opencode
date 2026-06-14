@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { audioManager } from '../audio/AudioManager'
+import { isApiAvailable } from '../api/client'
 import { SettingsModal } from './SettingsModal'
 import { useIsMobile } from '../hooks/useIsMobile'
 
@@ -51,28 +52,30 @@ export function MainMenu({ onStart }: MainMenuProps) {
   }, [])
 
   const handleClick = (fn: () => void) => {
-    audioManager.resume()
+    void audioManager.resume()
     fn()
   }
 
   const handleNewGame = async () => {
-    audioManager.resume()
-    try {
-      const res = await fetch(`${API_BASE}/saves`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ money: 0, total_cut: 0 }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    } catch (err) {
-      console.warn('No se pudo crear save remoto:', err)
+    await audioManager.resume()
+    if (await isApiAvailable()) {
+      try {
+        const res = await fetch(`${API_BASE}/saves`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ money: 0, total_cut: 0 }),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      } catch {
+        /* API no disponible: el juego sigue con guardado local */
+      }
     }
     newGame()
-    onStart(true) // partida nueva → mostrar cinemática de introducción
+    onStart(true)
   }
 
   const handleContinue = async () => {
-    audioManager.resume()
+    await audioManager.resume()
     if (saves.length === 0) return
     try {
       const res = await fetch(`${API_BASE}/saves/${saves[0].id}`)
@@ -137,7 +140,7 @@ export function MainMenu({ onStart }: MainMenuProps) {
 
             <SecondaryButton
               label='CONFIGURACIÓN'
-              onClick={() => { audioManager.resume(); setSettingsOpen(true) }}
+              onClick={() => { void audioManager.resume(); setSettingsOpen(true) }}
             />
           </div>
 

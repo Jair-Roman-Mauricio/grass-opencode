@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { audioManager } from '../audio/AudioManager'
 import { useGameStore } from '../store/gameStore'
 import { getCapacity } from '../game/economy'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsLandscape, useIsMobile } from '../hooks/useIsMobile'
 import { VirtualJoystick } from './VirtualJoystick'
+import { MissionPanel } from './MissionPanel'
 
 /* ── Stardew Valley palette ── */
 const WOOD_DARK = '#5d2c00'
@@ -41,6 +43,8 @@ export function HUD() {
   const actionE = useGameStore((s) => s.mobileActionE)
   const actionF = useGameStore((s) => s.mobileActionF)
   const isMobile = useIsMobile()
+  const isLandscape = useIsLandscape()
+  const mobileGame = isMobile && isLandscape
 
   const capacity = getCapacity(state)
   const inParcela = state.currentMap === 0
@@ -49,11 +53,18 @@ export function HUD() {
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' }}>
       {/* Backpack button (mobile) — beside Inicio */}
-      {isMobile && (
+      {mobileGame && (
         <button
           type="button"
           onClick={toggleInventory}
-          style={backpackBtnStyle}
+          style={{
+            ...backpackBtnStyle,
+            top: 'calc(6px + env(safe-area-inset-top, 0px))',
+            left: 'calc(102px + env(safe-area-inset-left, 0px))',
+            width: 44,
+            height: 44,
+            fontSize: 22,
+          }}
           aria-label="Inventario"
         >
           🎒
@@ -62,57 +73,45 @@ export function HUD() {
 
       {/* Load bar */}
       {inParcela && (
-        <div style={{
-          position: 'absolute',
-          top: isMobile ? 68 : 16,
-          left: isMobile ? 8 : '50%',
-          transform: isMobile ? 'none' : 'translateX(-50%)',
-        }}>
-          <LoadBar value={state.mower.load} max={capacity} compact={isMobile} />
+        <div
+          className={mobileGame ? 'mobile-load-bar' : undefined}
+          style={{
+            position: 'absolute',
+            top: mobileGame ? 8 : isMobile ? 68 : 16,
+            left: mobileGame ? '50%' : isMobile ? 8 : '50%',
+            transform: mobileGame ? 'translateX(-50%)' : isMobile ? 'none' : 'translateX(-50%)',
+          }}
+        >
+          <LoadBar value={state.mower.load} max={capacity} compact={mobileGame || isMobile} />
         </div>
       )}
 
       {/* Top-right: Stardew clock + money plaque */}
-      <div style={{
+      <div
+        className={mobileGame ? 'mobile-hud-top' : undefined}
+        style={{
         position: 'absolute',
-        top: isMobile ? 8 : 12,
-        right: isMobile ? 8 : 16,
+        top: mobileGame ? 8 : isMobile ? 8 : 12,
+        right: mobileGame ? 'calc(8px + env(safe-area-inset-right, 0px))' : isMobile ? 8 : 16,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'flex-end',
         gap: 6,
-        transform: isMobile ? 'scale(0.85)' : 'none',
+        transform: mobileGame ? 'scale(0.8)' : isMobile ? 'scale(0.85)' : 'none',
         transformOrigin: 'top right',
       }}>
         <StardewClockWidget />
         <StardewMoneyPlaque value={state.money} />
+        <MissionPanel />
       </div>
 
-      {/* Joystick (mobile) */}
-      <div
-        className="mobile-joystick-wrap"
-        style={{
-          position: 'absolute',
-          bottom: 'calc(90px + env(safe-area-inset-bottom, 0px))',
-          left: 16,
-          pointerEvents: 'auto',
-          zIndex: 25,
-        }}
-      >
+      {/* Joystick (mobile landscape) */}
+      <div className="mobile-joystick-wrap" style={mobileControlBase}>
         <VirtualJoystick />
       </div>
 
-      {/* Action buttons (mobile) */}
-      <div
-        className="mobile-actions"
-        style={{
-          position: 'absolute',
-          bottom: 'calc(90px + env(safe-area-inset-bottom, 0px))',
-          right: 16,
-          pointerEvents: 'auto',
-          zIndex: 25,
-        }}
-      >
+      {/* Action buttons (mobile landscape) */}
+      <div className="mobile-actions" style={mobileControlBase}>
         <ActionBtn
           label={actionE}
           onDown={() => setInput({ interact: true })}
@@ -127,12 +126,14 @@ export function HUD() {
 
       {message && (
         <div
-          className={isMobile ? 'hud-message hud-message--mobile' : 'hud-message'}
+          className={mobileGame ? 'hud-message hud-message--mobile' : 'hud-message'}
           style={{
             position: 'fixed',
-            bottom: isMobile
-              ? 'calc(280px + env(safe-area-inset-bottom, 0px))'
-              : 'calc(148px + env(safe-area-inset-bottom, 0px))',
+            bottom: mobileGame
+              ? 'calc(68px + env(safe-area-inset-bottom, 0px))'
+              : isMobile
+                ? 'calc(280px + env(safe-area-inset-bottom, 0px))'
+                : 'calc(148px + env(safe-area-inset-bottom, 0px))',
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 60,
@@ -494,12 +495,28 @@ function ActionBtn({ label, onDown, onUp }: { label: string; onDown: () => void;
     <button
       type="button"
       style={actionBtnStyle}
-      onMouseDown={onDown}
-      onMouseUp={onUp}
-      onMouseLeave={onUp}
-      onTouchStart={(e) => { e.preventDefault(); onDown() }}
-      onTouchEnd={(e) => { e.preventDefault(); onUp() }}
-      onTouchCancel={(e) => { e.preventDefault(); onUp() }}
+      onPointerDown={(e) => {
+        void audioManager.resume()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        onDown()
+      }}
+      onPointerUp={(e) => {
+        onUp()
+        try {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId)
+          }
+        } catch { /* ignore */ }
+      }}
+      onPointerCancel={(e) => {
+        onUp()
+        try {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId)
+          }
+        } catch { /* ignore */ }
+      }}
+      onPointerLeave={onUp}
     >
       {label}
     </button>
@@ -529,6 +546,12 @@ const actionBtnStyle: React.CSSProperties = {
   touchAction: 'none',
   boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.3), 0 3px 10px rgba(0,0,0,0.45)',
   textShadow: `0 1px 0 ${WOOD_DARK}`,
+}
+
+const mobileControlBase: React.CSSProperties = {
+  position: 'absolute',
+  pointerEvents: 'auto',
+  zIndex: 25,
 }
 
 const backpackBtnStyle: React.CSSProperties = {

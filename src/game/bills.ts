@@ -1,5 +1,5 @@
 import type { Debt } from './types'
-import { FAMILY } from './constants'
+import { FAMILY, MIN_FAMILY_DEBTS_TO_PAY } from './constants'
 
 // Gastos esenciales del hogar: cada uno protege a un familiar. Si lo dejas
 // impago, ese familiar acaba MAL. El orden corresponde a FAMILY.
@@ -52,30 +52,30 @@ export function abueloDebt(bills: Debt[]): Debt | undefined {
   return bills.find((d) => d.member === '')
 }
 
-/** Regla: hay que pagar la DEUDA DEL ABUELO y al menos `min` cuentas en total. */
-export function isMandatoryMet(bills: Debt[], min: number): boolean {
+/** Regla: abuelo pagado + al menos una cuenta familiar pagada. */
+export function isMandatoryMet(bills: Debt[]): boolean {
   const ab = abueloDebt(bills)
-  return (!ab || ab.paid) && paidCount(bills) >= min
+  const familyPaid = bills.filter((d) => d.member !== '' && d.paid).length
+  return (!ab || ab.paid) && familyPaid >= MIN_FAMILY_DEBTS_TO_PAY
 }
 
 /**
- * Plan de rescate con ahorros: marca como pagadas las cuentas mínimas que faltan
- * para cumplir la regla (el abuelo si está impago + las esenciales más baratas hasta
- * llegar a `min`) y devuelve el coste total. No muta el array original.
+ * Plan de rescate con ahorros: marca como pagadas la deuda del abuelo (si falta)
+ * y las cuentas familiares más baratas hasta cumplir el mínimo. No muta el original.
  */
-export function rescuePlan(bills: Debt[], min: number): { cost: number; bills: Debt[] } {
+export function rescuePlan(bills: Debt[]): { cost: number; bills: Debt[] } {
   const out = bills.map((d) => ({ ...d }))
   let cost = 0
   const ab = out.find((d) => d.member === '')
   if (ab && !ab.paid) { ab.paid = true; cost += ab.amount }
-  let pc = out.filter((d) => d.paid).length
-  if (pc < min) {
+  let familyPaid = out.filter((d) => d.member !== '' && d.paid).length
+  if (familyPaid < MIN_FAMILY_DEBTS_TO_PAY) {
     const cheapest = out.filter((d) => d.member !== '' && !d.paid).sort((a, b) => a.amount - b.amount)
     for (const d of cheapest) {
-      if (pc >= min) break
+      if (familyPaid >= MIN_FAMILY_DEBTS_TO_PAY) break
       d.paid = true
       cost += d.amount
-      pc++
+      familyPaid++
     }
   }
   return { cost, bills: out }

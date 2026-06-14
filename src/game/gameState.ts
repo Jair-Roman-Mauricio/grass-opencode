@@ -32,6 +32,7 @@ export function createDefaultState(): GameState {
     day: 1,
     currentMap: 0,
     mapsOwned: [true, false],
+    inheritedDebtPaid: 0,
     mower: createDefaultMower(),
     grass: createDefaultGrass(),
     stats: {

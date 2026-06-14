@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { audioManager } from '../audio/AudioManager'
-import { MIN_DEBTS_TO_PAY } from '../game/constants'
+import { MIN_FAMILY_DEBTS_TO_PAY, MIN_WALLET_RESERVE } from '../game/constants'
 import { paidCount, isMandatoryMet, rescuePlan } from '../game/bills'
 
 export function BillCollectorOverlay() {
@@ -12,6 +12,7 @@ export function BillCollectorOverlay() {
   const day = useGameStore((s) => s.state.day)
   const family = useGameStore((s) => s.family)
   const payDebt = useGameStore((s) => s.payDebt)
+  const autoPayAbueloDebt = useGameStore((s) => s.autoPayAbueloDebt)
   const resolveDay = useGameStore((s) => s.resolveDay)
   const triggerGameOver = useGameStore((s) => s.triggerGameOver)
   const depositSavings = useGameStore((s) => s.depositSavings)
@@ -32,14 +33,19 @@ export function BillCollectorOverlay() {
     }
   }, [show])
 
+  useEffect(() => {
+    if (phase === 'ledger') autoPayAbueloDebt()
+  }, [phase, autoPayAbueloDebt])
+
   if (!show || !bills) return null
 
   const paid = paidCount(bills)
-  const met = isMandatoryMet(bills, MIN_DEBTS_TO_PAY)
-  const plan = rescuePlan(bills, MIN_DEBTS_TO_PAY) // lo que faltaría cubrir con el colchón
+  const met = isMandatoryMet(bills)
+  const plan = rescuePlan(bills)
   const cushionCovers = !met && savings >= plan.cost
   const canContinue = met || cushionCovers
   const doomed = !canContinue
+  const brokeAfterBills = canContinue && money < MIN_WALLET_RESERVE
 
   // Previsualización: ▲ si TODAS las cuentas asignadas a ese familiar están pagadas
   // (subirá de salud), ▼ si alguna queda impaga (bajará). Muerto = sin cambio.
@@ -69,8 +75,8 @@ export function BillCollectorOverlay() {
           <div style={bannerStyle}>FIN DEL DÍA {day}</div>
         </div>
         <p style={instructionStyle}>
-          Paga tus cuentas haciendo clic en el selector. Cubre al menos {MIN_DEBTS_TO_PAY} o el
-          cobrador se cobra con tu familia.
+          Paga tus cuentas familiares haciendo clic en el selector. El abuelo se cobra solo al abrir el libro.
+          Necesitas abuelo pagado + al menos {MIN_FAMILY_DEBTS_TO_PAY} cuenta familiar, o el colchón cubre el rescate.
         </p>
 
         <div style={bodyStyle}>
@@ -81,13 +87,34 @@ export function BillCollectorOverlay() {
             <div style={savingsRowStyle}>
               <span style={{ color: '#e8e3d6' }}>AHORROS</span>
               <span style={{ color: '#7CC55A', minWidth: 56, textAlign: 'right', fontFamily: 'monospace' }}>${savings}</span>
-              <button style={miniBtnStyle} disabled={money <= 0} onClick={depositSavings} title="Guardar todo el dinero">▲</button>
+              <button
+                style={miniBtnStyle}
+                disabled={money <= MIN_WALLET_RESERVE}
+                onClick={depositSavings}
+                title={`Guardar sobrante (dejas $${MIN_WALLET_RESERVE} para jugar)`}
+              >
+                ▲
+              </button>
               <button style={miniBtnStyle} disabled={savings <= 0} onClick={withdrawSavings} title="Retirar todo el ahorro">▼</button>
             </div>
             <div style={{ height: 10 }} />
             {bills.map((d, i) => {
               const affordable = d.paid || money >= d.amount
               const mandatory = d.member === ''
+              if (mandatory) {
+                return (
+                  <div key={i} style={debtRowStyle(true)}>
+                    <span style={selectorStyle}>{d.paid ? '◉' : '○'}</span>
+                    <span style={{ flex: 1, color: d.paid ? '#7d8870' : '#c25646' }}>
+                      {d.name}
+                      <span style={mandTagStyle}>OBLIGATORIA</span>
+                    </span>
+                    <span style={{ color: d.paid ? '#7d8870' : '#c25646', minWidth: 56, textAlign: 'right' }}>
+                      {d.paid ? `(${d.amount})` : `-${d.amount}`}
+                    </span>
+                  </div>
+                )
+              }
               return (
                 <button
                   key={i}
@@ -98,7 +125,6 @@ export function BillCollectorOverlay() {
                   <span style={selectorStyle}>{d.paid ? '◉' : '○'}</span>
                   <span style={{ flex: 1, color: d.paid ? '#7d8870' : '#c25646' }}>
                     {d.name}
-                    {mandatory && <span style={mandTagStyle}>OBLIGATORIA</span>}
                     {d.member && <span style={{ color: '#7a8068', fontSize: 11 }}> → {d.member}</span>}
                   </span>
                   <span style={{ color: d.paid ? '#7d8870' : '#c25646', minWidth: 56, textAlign: 'right' }}>
@@ -131,7 +157,7 @@ export function BillCollectorOverlay() {
 
         <div style={footerStyle}>
           <span style={{ color: met ? '#7CC55A' : cushionCovers ? '#7CC55A' : '#d8a23f', fontSize: 13 }}>
-            Pagadas {paid}/{bills.length} · paga el abuelo + {MIN_DEBTS_TO_PAY} en total
+            Pagadas {paid}/{bills.length} · Abuelo (obligatorio) + al menos {MIN_FAMILY_DEBTS_TO_PAY} cuenta familiar
           </span>
           {doomed ? (
             <button style={doomBtnStyle} onClick={triggerGameOver}>ACEPTAR DESTINO ☠</button>
@@ -141,6 +167,11 @@ export function BillCollectorOverlay() {
         </div>
         {cushionCovers && (
           <p style={cushionTextStyle}>Tu colchón cubrirá lo que falta: −${plan.cost} de tus ahorros.</p>
+        )}
+        {brokeAfterBills && (
+          <p style={walletWarnStyle}>
+            Te quedan menos de ${MIN_WALLET_RESERVE} en mano. Si continúas, no podrás comprar semillas mañana.
+          </p>
         )}
         {doomed && (
           <p style={doomTextStyle}>No cumples (falta el abuelo o el mínimo) y no tienes colchón. El cobrador sonríe.</p>
@@ -231,6 +262,9 @@ const mandTagStyle: React.CSSProperties = {
 }
 const cushionTextStyle: React.CSSProperties = {
   marginTop: 12, fontSize: 12, color: '#7CC55A', fontStyle: 'italic', textAlign: 'right',
+}
+const walletWarnStyle: React.CSSProperties = {
+  marginTop: 12, fontSize: 12, color: '#d8857a', fontWeight: 700, textAlign: 'right',
 }
 const ledgerStyle: React.CSSProperties = { flex: 1, fontSize: 15, letterSpacing: 1 }
 const debtRowStyle = (enabled: boolean): React.CSSProperties => ({

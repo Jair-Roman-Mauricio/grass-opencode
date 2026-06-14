@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { audioManager } from '../audio/AudioManager'
 import { useGameStore } from '../store/gameStore'
 
 const BASE_SIZE = 132
@@ -40,12 +41,22 @@ export function VirtualJoystick() {
     })
   }, [setInput])
 
+  const releasePointer = (el: HTMLDivElement, pointerId: number) => {
+    try {
+      if (el.hasPointerCapture(pointerId)) {
+        el.releasePointerCapture(pointerId)
+      }
+    } catch {
+      /* captura ya liberada */
+    }
+  }
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current !== null) return
+    void audioManager.resume()
     pointerIdRef.current = e.pointerId
     setActive(true)
     e.currentTarget.setPointerCapture(e.pointerId)
-    e.preventDefault()
 
     const rect = baseRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -56,7 +67,6 @@ export function VirtualJoystick() {
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current !== e.pointerId) return
-    e.preventDefault()
 
     const rect = baseRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -67,11 +77,16 @@ export function VirtualJoystick() {
 
   const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current !== e.pointerId) return
+    const el = e.currentTarget
+    const pointerId = e.pointerId
+    releasePointer(el, pointerId)
     pointerIdRef.current = null
-    e.preventDefault()
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    }
+    clearMovement()
+  }
+
+  const handleLostPointerCapture = () => {
+    if (pointerIdRef.current === null) return
+    pointerIdRef.current = null
     clearMovement()
   }
 
@@ -95,7 +110,7 @@ export function VirtualJoystick() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
-      onLostPointerCapture={clearMovement}
+      onLostPointerCapture={handleLostPointerCapture}
       role="presentation"
       aria-hidden
     >

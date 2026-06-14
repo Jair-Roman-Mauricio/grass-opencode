@@ -3,10 +3,11 @@ import type { GameState, InputState, UpgradeId, SeedId, Debt, FamilyMember, Fami
 import { createDefaultState } from '../game/gameState'
 import { loadGame, saveGame, hasSaveData, deleteSave } from '../game/save'
 import { calculateDeposit, getUpgradeCost, isUpgradeMaxed, getSeedDef, canBuySeed, seedEffectiveCost } from '../game/economy'
-import { generateDailyBills, paidCount, isMandatoryMet, rescuePlan } from '../game/bills'
-import { getMap, isMapOwned, travelCost, canTravel } from '../game/maps'
+import { generateDailyBills, paidCount, isMandatoryMet, rescuePlan, totalPaid } from '../game/bills'
+import { getMap, isMapOwned, travelCost, canTravel, canBuyTicket } from '../game/maps'
+import { getMapObjectiveBlockReason } from '../game/missions'
 import { isNearBarn } from '../game/physics'
-import { TOOLS, DAY_LENGTH_MS, MIN_DEBTS_TO_PAY, FAMILY, getDayLength } from '../game/constants'
+import { TOOLS, DAY_LENGTH_MS, MIN_WALLET_RESERVE, INHERITED_DEBT_TOTAL, FAMILY, getDayLength } from '../game/constants'
 import { audioManager } from '../audio/AudioManager'
 
 const freshFamily = (): FamilyMember[] => FAMILY.map((name) => ({ name, status: 'bien' as const }))
@@ -68,10 +69,11 @@ interface GameStore {
 
   // Cobrador de cuentas
   payDebt: (index: number) => void
+  autoPayAbueloDebt: () => void
   resolveDay: () => void
   dismissDeath: () => void
   triggerGameOver: () => void
-  depositSavings: () => void   // guardar todo el dinero actual en el colchón
+  depositSavings: () => void   // guardar sobrante dejando MIN_WALLET_RESERVE en mano
   withdrawSavings: () => void  // retirar todo el colchón al dinero
 
   // Mapas / parada de autobús
@@ -219,11 +221,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // --- Cobrador de cuentas ---
 
   // Marca/desmarca el pago de una cuenta (selector tipo Papers Please).
+  autoPayAbueloDebt: () => {
+    const s = get()
+    if (!s.bills) return
+    const idx = s.bills.findIndex((d) => d.member === '')
+    if (idx < 0) return
+    const debt = s.bills[idx]
+    if (debt.paid || s.state.money < debt.amount) return
+    const bills = s.bills.map((d, i) => (i === idx ? { ...d, paid: true } : d))
+    audioManager.playSell()
+    set({ bills, state: { ...s.state, money: s.state.money - debt.amount } })
+  },
+
   payDebt: (index) => {
     const s = get()
     if (!s.bills) return
     const debt = s.bills[index]
     if (!debt) return
+    if (debt.member === '') return
     if (debt.paid) {
       // Desmarcar → devolver el dinero.
       audioManager.playClick()
@@ -248,8 +263,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let savings = s.state.savings
     // Regla: pagar la DEUDA DEL ABUELO + al menos MIN cuentas. Si no se cumple,
     // los AHORROS (colchón) cubren automáticamente lo que falte; si no alcanzan → game over.
-    if (!isMandatoryMet(bills, MIN_DEBTS_TO_PAY)) {
-      const plan = rescuePlan(bills, MIN_DEBTS_TO_PAY)
+    if (!isMandatoryMet(bills)) {
+      const plan = rescuePlan(bills)
       if (savings >= plan.cost) {
         savings -= plan.cost
         bills = plan.bills
@@ -270,6 +285,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (status === 'muerte') newlyDead.push(m.name)
       return { ...m, status }
     })
+    if (s.state.money < MIN_WALLET_RESERVE) {
+      get().showMessage(`Sin $${MIN_WALLET_RESERVE} no puedes comprar semillas mañana.`)
+      get().triggerGameOver()
+      return
+    }
+
+    const paidToDebt = totalPaid(bills)
+    const inheritedDebtPaid = Math.min(
+      INHERITED_DEBT_TOTAL,
+      s.state.inheritedDebtPaid + paidToDebt,
+    )
+
     audioManager.playUnlock()
     const nextDay = s.state.day + 1
     const len = getDayLength(s.state.seedTierUnlocked)
@@ -279,16 +306,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
       dayStartMoney: s.state.money,
       family,
       deathNews: newlyDead,
-      state: { ...s.state, day: nextDay, savings },
+      state: { ...s.state, day: nextDay, savings, inheritedDebtPaid },
     })
   },
 
   // Mueve TODO el dinero al colchón de ahorros (y al revés).
   depositSavings: () => {
     const s = get()
-    if (s.state.money <= 0) return
+    if (s.state.money <= MIN_WALLET_RESERVE) {
+      get().showMessage(`Debes conservar al menos $${MIN_WALLET_RESERVE} para jugar`)
+      return
+    }
+    const toDeposit = s.state.money - MIN_WALLET_RESERVE
     audioManager.playClick()
-    set({ state: { ...s.state, savings: s.state.savings + s.state.money, money: 0 } })
+    set({
+      state: {
+        ...s.state,
+        savings: s.state.savings + toDeposit,
+        money: MIN_WALLET_RESERVE,
+      },
+    })
   },
   withdrawSavings: () => {
     const s = get()
@@ -326,6 +363,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (map.comingSoon) {
       audioManager.playError()
       get().showMessage('Ese destino aún no está disponible')
+      return
+    }
+    if (!canBuyTicket(s.state, mapId)) {
+      audioManager.playError()
+      const reason = getMapObjectiveBlockReason(s.state, mapId)
+      get().showMessage(reason ?? 'Completa el objetivo principal de este mapa antes de comprar el boleto.')
       return
     }
     if (s.state.money < map.ticketCost) {

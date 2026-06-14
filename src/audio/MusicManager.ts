@@ -147,14 +147,14 @@ export class MusicManager {
     const tr = Tone.getTransport()
     // Reactivar la pista activa por si venía silenciada.
     this.tracks.forEach((t, i) => t.gain.gain.rampTo(i === this.active ? 1 : 0, 0.4))
-    this.rotateId = tr.scheduleRepeat(() => this.rotate(), `${ROTATE_MEASURES}m`)
+    this.rotateId = tr.scheduleRepeat((time) => this.rotateAt(time), `${ROTATE_MEASURES}m`)
     if (tr.state !== 'started') tr.start('+0.1')
   }
 
-  private rotate(): void {
+  private rotateAt(time: number): void {
     const next = (this.active + 1) % this.tracks.length
-    this.tracks[this.active].gain.gain.rampTo(0, CROSSFADE)
-    this.tracks[next].gain.gain.rampTo(1, CROSSFADE)
+    this.tracks[this.active].gain.gain.rampTo(0, CROSSFADE, time)
+    this.tracks[next].gain.gain.rampTo(1, CROSSFADE, time)
     this.active = next
   }
 

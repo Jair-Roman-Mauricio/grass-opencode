@@ -125,6 +125,9 @@ export interface GameState {
   /** Acceso desbloqueado a cada mapa (boleto comprado). */
   mapsOwned: boolean[]
 
+  /** Total pagado al cobrador hacia la deuda heredada del abuelo. */
+  inheritedDebtPaid: number
+
   mower: MowerState
   grass: number[][]
   stats: GameStats

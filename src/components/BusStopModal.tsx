@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useGameStore } from '../store/gameStore'
 import { MAPS } from '../game/constants'
-import { isMapOwned, travelCost } from '../game/maps'
+import { isMapOwned, travelCost, canBuyTicket } from '../game/maps'
+import { getMapObjectiveBlockReason, isTicketBlockedByObjective } from '../game/missions'
 import { formatNum } from '../utils/utils'
 
 const WOOD_DARK = '#5d2c00'
@@ -40,6 +41,149 @@ function GoldCoin({ size = 18 }: { size?: number }) {
   )
 }
 
+/** Papel sucio pegado encima con machas rojas — cubre casi todo el modal. */
+function PastedThreatNotice({ text }: { text: string }) {
+  return (
+    <div style={paperOverlayStyle} aria-label="Aviso de amenaza">
+      <div style={tapeStyle('left', 'top')} />
+      <div style={tapeStyle('right', 'top')} />
+      <div style={tapeStyle('left', 'bottom')} />
+      <div style={tapeStyle('right', 'bottom')} />
+      <div style={paperFullStyle}>
+        {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+          <div key={n} style={stainStyle(n as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)} />
+        ))}
+        <div style={stampFullStyle}>AVISO DEL COBRADOR</div>
+        <p style={paperTextFullStyle}>{text}</p>
+        <div style={scribbleStyle}>✕ PROHIBIDO VIAJAR ✕</div>
+      </div>
+    </div>
+  )
+}
+
+const paperOverlayStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 28,
+  left: 6,
+  right: 6,
+  bottom: 8,
+  zIndex: 30,
+  transform: 'rotate(-1deg)',
+  filter: 'drop-shadow(5px 10px 18px rgba(0,0,0,0.5))',
+  pointerEvents: 'auto',
+}
+
+const tapeStyle = (side: 'left' | 'right', vert: 'top' | 'bottom'): React.CSSProperties => ({
+  position: 'absolute',
+  [vert]: vert === 'top' ? -8 : -6,
+  left: side === 'left' ? 12 : undefined,
+  right: side === 'right' ? 12 : undefined,
+  width: vert === 'top' ? 56 : 48,
+  height: 16,
+  background: 'linear-gradient(180deg, rgba(255,248,220,0.8) 0%, rgba(210,190,140,0.5) 100%)',
+  border: '1px solid rgba(160,140,90,0.55)',
+  borderRadius: 1,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+  transform: `${side === 'left' ? 'rotate(-10deg)' : 'rotate(10deg)'}`,
+  zIndex: 31,
+  opacity: 0.92,
+})
+
+const paperFullStyle: React.CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '36px 28px 32px',
+  background: `
+    radial-gradient(ellipse 70% 45% at 15% 85%, rgba(110,80,45,0.28) 0%, transparent 55%),
+    radial-gradient(ellipse 55% 40% at 90% 12%, rgba(95,70,38,0.22) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 35% at 50% 55%, rgba(100,75,40,0.12) 0%, transparent 65%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 4px,
+      rgba(70,48,20,0.04) 4px,
+      rgba(70,48,20,0.04) 5px
+    ),
+    linear-gradient(168deg, #ede0b8 0%, #e2d0a0 30%, #d6c490 65%, #c9b480 100%)
+  `,
+  border: '1px solid rgba(65,42,18,0.45)',
+  clipPath: 'polygon(1% 3%, 4% 0%, 96% 1%, 99% 5%, 100% 94%, 97% 100%, 3% 99%, 0% 92%)',
+  boxShadow: 'inset 0 0 40px rgba(80,55,25,0.18), inset -3px -4px 12px rgba(50,30,10,0.15)',
+}
+
+const stainStyle = (n: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): React.CSSProperties => {
+  const spots: Record<number, React.CSSProperties> = {
+    1: { top: '6%', right: '8%', width: '18%', height: '14%', transform: 'rotate(25deg)' },
+    2: { bottom: '10%', left: '5%', width: '22%', height: '16%', transform: 'rotate(-12deg)' },
+    3: { top: '38%', left: '42%', width: '12%', height: '10%', transform: 'rotate(35deg)' },
+    4: { top: '14%', left: '10%', width: '10%', height: '8%', transform: 'rotate(-28deg)' },
+    5: { bottom: '22%', right: '15%', width: '15%', height: '12%', transform: 'rotate(18deg)' },
+    6: { top: '55%', right: '28%', width: '20%', height: '14%', transform: 'rotate(-8deg)' },
+    7: { top: '22%', right: '35%', width: '8%', height: '7%', transform: 'rotate(50deg)' },
+    8: { bottom: '35%', left: '25%', width: '14%', height: '11%', transform: 'rotate(-22deg)' },
+  }
+  return {
+    position: 'absolute',
+    pointerEvents: 'none',
+    borderRadius: '45% 55% 48% 52%',
+    background: `radial-gradient(ellipse at 42% 38%,
+      rgba(185, 24, 14, 0.85) 0%,
+      rgba(140, 16, 8, 0.58) 38%,
+      rgba(100, 10, 5, 0.22) 62%,
+      transparent 90%)`,
+    filter: 'blur(0.4px)',
+    ...spots[n],
+  }
+}
+
+const stampFullStyle: React.CSSProperties = {
+  marginBottom: 16,
+  padding: '4px 16px',
+  fontFamily: PIXEL_FONT,
+  fontSize: 22,
+  fontWeight: 'bold',
+  letterSpacing: 4,
+  color: '#7a1008',
+  border: '3px solid rgba(122, 16, 8, 0.7)',
+  borderRadius: 3,
+  transform: 'rotate(-3deg)',
+  opacity: 0.9,
+  textAlign: 'center',
+}
+
+const paperTextFullStyle: React.CSSProperties = {
+  position: 'relative',
+  margin: 0,
+  maxWidth: 420,
+  fontFamily: "'Courier New', Courier, monospace",
+  fontSize: 17,
+  fontWeight: 700,
+  lineHeight: 1.45,
+  color: '#1f1008',
+  textAlign: 'center',
+  textShadow: '0 0 1px rgba(255,255,255,0.35)',
+  letterSpacing: 0.3,
+  zIndex: 1,
+}
+
+const scribbleStyle: React.CSSProperties = {
+  marginTop: 20,
+  fontFamily: PIXEL_FONT,
+  fontSize: 20,
+  fontWeight: 'bold',
+  color: 'rgba(120, 16, 8, 0.75)',
+  letterSpacing: 3,
+  transform: 'rotate(2deg)',
+  borderTop: '2px dashed rgba(120, 16, 8, 0.4)',
+  borderBottom: '2px dashed rgba(120, 16, 8, 0.4)',
+  padding: '6px 12px',
+}
+
 export function BusStopModal() {
   const show = useGameStore((s) => s.showBusStop)
   const state = useGameStore((s) => s.state)
@@ -57,6 +201,14 @@ export function BusStopModal() {
   }, [show, toggle])
 
   const isMobile = useIsMobile()
+
+  const threatMessage = MAPS.reduce<string | null>((msg, map) => {
+    if (msg) return msg
+    if (isTicketBlockedByObjective(state, map.id)) {
+      return getMapObjectiveBlockReason(state, map.id)
+    }
+    return null
+  }, null)
 
   if (!show) return null
 
@@ -83,6 +235,7 @@ export function BusStopModal() {
               const owned = isMapOwned(state, map.id)
               const here = state.currentMap === map.id
               const cost = travelCost(state, map.id)
+              const ticketAllowed = canBuyTicket(state, map.id)
               return (
                 <div
                   key={map.id}
@@ -147,10 +300,10 @@ export function BusStopModal() {
                       <button
                         style={{
                           ...actionBtnBase,
-                          ...(state.money >= map.ticketCost ? actionBtnActive : actionBtnDisabled),
+                          ...(ticketAllowed ? actionBtnActive : actionBtnDisabled),
                           ...(isMobile ? { width: '100%' } : {}),
                         }}
-                        disabled={state.money < map.ticketCost}
+                        disabled={!ticketAllowed}
                         onClick={() => buyTicket(map.id)}
                       >
                         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -169,6 +322,8 @@ export function BusStopModal() {
             regresar a otros mapas cuesta una tarifa.
           </p>
         </div>
+
+        {threatMessage && <PastedThreatNotice text={threatMessage} />}
       </div>
     </div>
   )
@@ -247,6 +402,8 @@ const innerPlaqueStyle: React.CSSProperties = {
   boxShadow: 'inset 0 3px 6px rgba(0,0,0,0.15)',
   padding: '20px 16px 16px',
   position: 'relative',
+  overflow: 'hidden',
+  minHeight: 280,
 }
 
 const moneyStyle: React.CSSProperties = {

@@ -13,6 +13,9 @@ import { SettingsModal } from '../components/SettingsModal'
 import { BillCollectorOverlay } from '../components/BillCollectorOverlay'
 import { GameOverScreen } from '../components/GameOverScreen'
 import { InventoryOverlay } from '../components/InventoryOverlay'
+import { RotateDeviceOverlay } from '../components/RotateDeviceOverlay'
+import { useLandscapeLock } from '../hooks/useLandscapeLock'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 interface Game3DScreenProps {
   onBack: () => void
@@ -57,6 +60,9 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
   const showSettings = useGameStore((s) => s.showSettings)
   const [showHint, setShowHint] = useState(true)
   const [assetsReady, setAssetsReady] = useState(false)
+  const isMobile = useIsMobile()
+
+  useLandscapeLock(true)
 
   useEffect(() => {
     useGameStore.getState().setPlaying(true)
@@ -91,7 +97,6 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
     const handleResize = () => renderer.resize(window.innerWidth, window.innerHeight)
     window.addEventListener('resize', handleResize)
 
-    // Música de fondo mientras se juega.
     audioManager.startMusic()
 
     let lastTime = performance.now()
@@ -273,9 +278,20 @@ export function Game3DScreen({ onBack }: Game3DScreenProps) {
         </>
       )}
 
+      <RotateDeviceOverlay />
+
       <button
         onClick={() => { useGameStore.getState().save(); onBack() }}
-        style={menuBtnStyle}
+        style={{
+          ...menuBtnStyle,
+          ...(isMobile ? {
+            width: 88,
+            height: 44,
+            fontSize: 18,
+            top: 'calc(6px + env(safe-area-inset-top, 0px))',
+            left: 'calc(6px + env(safe-area-inset-left, 0px))',
+          } : {}),
+        }}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = 'linear-gradient(180deg, #e8a050 0%, #c87828 50%, #8b4513 100%)'
         }}

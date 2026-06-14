@@ -41,23 +41,48 @@ export class AudioManager {
   private music: MusicManager | null = null
   private musicEnabled = true
   private sfxEnabled = true
+  private musicPending = false
+  private gestureBound = false
   private onVisibility: (() => void) | null = null
 
   init(): void {
     if (this._initialized) return
     this._initialized = true
-    // El AudioContext de Tone arranca en resume() (primer gesto del usuario).
+    this.bindUserGesture()
   }
 
-  /** Arranca Tone y construye el grafo de audio (idempotente). */
-  resume(): void {
-    if (this.started) {
-      if (Tone.getContext().state === 'suspended') void Tone.start()
+  isStarted(): boolean {
+    return this.started
+  }
+
+  /** Registra el primer gesto del usuario para desbloquear el AudioContext. */
+  private bindUserGesture(): void {
+    if (this.gestureBound || typeof window === 'undefined') return
+    this.gestureBound = true
+    const onGesture = () => { void this.resume() }
+    window.addEventListener('pointerdown', onGesture, { once: true, capture: true, passive: true })
+    window.addEventListener('keydown', onGesture, { once: true, capture: true })
+  }
+
+  /** Arranca Tone y construye el grafo de audio tras un gesto del usuario. */
+  async resume(): Promise<void> {
+    try {
+      if (Tone.getContext().state !== 'running') {
+        await Tone.start()
+      }
+    } catch {
       return
     }
-    this.started = true
-    void Tone.start()
-    this.buildGraph()
+
+    if (!this.started) {
+      this.started = true
+      this.buildGraph()
+    }
+
+    if (this.musicPending && this.enabled && this.musicEnabled) {
+      this.musicPending = false
+      this.music?.start()
+    }
   }
 
   private buildGraph(): void {
@@ -279,7 +304,6 @@ export class AudioManager {
 
   /** Drone ambiental MUY suave durante toda la intro (no debe aturdir ni tapar la voz). */
   startCinematic(): void {
-    if (!this.started) this.resume()
     if (!this.ready || this.cineOsc) return
     this.cineGain = new Tone.Gain(0).connect(this.sfxBus!)
     this.cineGain.gain.rampTo(0.035, 2.5)
@@ -340,8 +364,11 @@ export class AudioManager {
   // --- Música de fondo ---
 
   startMusic(): void {
-    if (!this.started) this.resume()
     if (!this.enabled || !this.musicEnabled) return
+    if (!this.started) {
+      this.musicPending = true
+      return
+    }
     this.music?.start()
   }
 
